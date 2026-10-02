@@ -106,7 +106,7 @@ mini-gpt-scratch/
 | **Layers (`n_layer`)** | `4` / `6` | Number of Transformer decoder blocks |
 | **Context Length (`block_size`)** | `128` / `256` | Maximum context length |
 | **Vocab Size (`vocab_size`)** | `50,257` | GPT-2 standard BPE vocabulary size |
-| **Optimizer** | `AdamW` | $\text{lr}=1\times 10^{-3}, \beta_1=0.9, \beta_2=0.95, \text{weight\_decay}=0.1$ |
+| **Optimizer** | `AdamW` | `lr=1e-3, beta1=0.9, beta2=0.95, weight_decay=0.1` |
 
 ---
 
