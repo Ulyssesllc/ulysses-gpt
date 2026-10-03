@@ -55,7 +55,7 @@ def load_text_dataset(dataset_path: str | None, dataset_url: str | None) -> str:
 def load_huggingface_text_dataset(
     dataset_name: str,
     split: str,
-    text_column: str,
+    text_column: str | None,
     min_characters: int,
     dataset_config: str | None = None,
 ) -> str:
@@ -63,16 +63,40 @@ def load_huggingface_text_dataset(
     from datasets import load_dataset
 
     dataset = load_dataset(dataset_name, name=dataset_config, split=split)
-    # UltraChat's OpenBMB release stores each conversation in `data`, while
-    # most text datasets use `text`. Keep `text` as the normal default, but
-    # make the common UltraChat invocation work without an extra flag.
-    if (
-        text_column not in dataset.column_names
-        and text_column == "text"
-        and "data" in dataset.column_names
-    ):
-        print(" Text column 'text' not found; using conversation column 'data'.")
-        text_column = "data"
+    if text_column is None or text_column == "auto":
+        # Prefer conventional prose fields over metadata and identifiers.
+        preferred = (
+            "text",
+            "content",
+            "document",
+            "article",
+            "messages",
+            "conversation",
+            "data",
+            "output",
+            "response",
+            "prompt",
+        )
+        text_column = next(
+            (name for name in preferred if name in dataset.column_names), None
+        )
+        if text_column is None:
+            # Fall back to the first string or nested field based on dataset features.
+            text_column = next(
+                (
+                    name
+                    for name, feature in dataset.features.items()
+                    if getattr(feature, "dtype", None) == "string"
+                    or getattr(feature, "feature", None) is not None
+                ),
+                None,
+            )
+        if text_column is None:
+            raise ValueError(
+                "Could not infer a text column. Available columns: "
+                f"{dataset.column_names}. Pass --text-column COLUMN explicitly."
+            )
+        print(f" Auto-selected Hugging Face text column: {text_column!r}")
     cleaned = clean_hf_dataset(dataset, text_column, min_characters)
     text = "\n\n".join(cleaned[text_column])
     if not text:
@@ -102,7 +126,11 @@ def main():
     parser.add_argument(
         "--hf-split", default="train", help="Dataset split (default: train)."
     )
-    parser.add_argument("--text-column", default="text", help="Text column name.")
+    parser.add_argument(
+        "--text-column",
+        default="auto",
+        help="Text column name (default: auto-detect; use 'auto' to enable detection).",
+    )
     parser.add_argument(
         "--min-text-characters",
         type=int,
@@ -118,7 +146,7 @@ def main():
         raw_text = load_huggingface_text_dataset(
             args.hf_dataset,
             args.hf_split,
-            args.text_column,
+            None if args.text_column == "auto" else args.text_column,
             args.min_text_characters,
             args.hf_config,
         )
