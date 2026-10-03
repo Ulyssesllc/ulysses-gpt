@@ -116,8 +116,8 @@ ulysses-gpt/
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/mini-gpt-scratch.git
-cd mini-gpt-scratch
+!git clone https://github.com/Ulyssesllc/ulysses-gpt.git
+%cd ulysses-gpt
 
 # Create and activate a virtual environment
 python3 -m venv venv
