@@ -151,7 +151,7 @@ Open a new **Google Colab** notebook, select **Runtime ➔ T4 GPU**, and run:
 !git clone https://github.com/Ulyssesllc/ulysses-gpt.git
 %cd ulysses-gpt
 !pip install -e ".[dev]" gradio
-!python src/train_colab.py
+!python train_colab.py
 ```
 
 ---
