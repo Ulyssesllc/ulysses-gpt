@@ -31,7 +31,7 @@ The project is designed to bridge the gap between foundational deep learning the
   - **Automatic Checkpointing** saves and restores the state of the `model`, `optimizer`, `scaler`, and `global_step`.
   - Automatic Perplexity evaluation ($PPL = e^{\text{Loss}}$) and validation tracking.
 - **Autoregressive Text Generation Engine**:
-  - Autoregressive sampling with integrated **Temperature Scaling** and **Top-$k$ Filtering**.
+  - Autoregressive sampling with integrated **Temperature Scaling** and **Top-k Filtering**.
 - **Post-Training & Alignment**:
   - **Supervised Fine-Tuning (SFT)** with Prompt Masking (`-100` target loss ignoring).
   - **Direct Preference Optimization (DPO)** using a dual-model architecture (Policy Model vs. Frozen Reference Model) with Reward Margin tracking.
@@ -70,7 +70,7 @@ $$\mathcal{L}_{\text{DPO}}(\theta) = -\mathbb{E}_{(x, y_w, y_l)} \left[ \log \si
 ## 📂 Project Structure
 
 ```text
-mini-gpt-scratch/
+ulysses-gpt/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI/CD workflow
@@ -148,8 +148,8 @@ chmod +x run_project.sh
 Open a new **Google Colab** notebook, select **Runtime ➔ T4 GPU**, and run:
 
 ```python
-!git clone https://github.com/your-username/mini-gpt-scratch.git
-%cd mini-gpt-scratch
+!git clone https://github.com/Ulyssesllc/ulysses-gpt.git
+%cd ulysses-gpt
 !pip install -e ".[dev]" gradio
 !python src/train_colab.py
 ```
