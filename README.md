@@ -177,7 +177,7 @@ to automatic detection of common text fields (`text`, `content`, `article`,
 and encoded in batches, with visible progress and a configurable token limit.
 
 ```bash
-python train.py --hf-dataset wikitext --hf-config wikitext-2-raw-v1 \
+python train.py --hf-dataset Salesforce/wikitext --hf-config wikitext-2-raw-v1 \
   --hf-split train --text-column text --min-text-characters 20
 ```
 

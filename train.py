@@ -57,6 +57,14 @@ def _choose_column(dataset: Any, requested: str, preferred: tuple[str, ...]) -> 
 def _load_hf_split(name: str, config: str | None, split: str) -> Any:
     from datasets import load_dataset
 
+    # Hugging Face expects owner/repo IDs. Keep the common legacy shortcut usable.
+    if name == "wikitext":
+        name = "Salesforce/wikitext"
+    elif "/" not in name:
+        raise ValueError(
+            f"Invalid Hugging Face dataset ID {name!r}. Use the full "
+            "'namespace/repository' form (for example 'Salesforce/wikitext')."
+        )
     return load_dataset(name, name=config, split=split)
 
 
