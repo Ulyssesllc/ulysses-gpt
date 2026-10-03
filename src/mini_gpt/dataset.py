@@ -41,9 +41,24 @@ def clean_hf_dataset(
     if min_characters < 1:
         raise ValueError("min_characters must be at least 1")
 
+    def to_text(value: object) -> str:
+        # Conversation datasets often store turns as a list in one column
+        # (for example UltraChat's `data` field), rather than a single string.
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            content = value.get("content")
+            if isinstance(content, str):
+                role = value.get("role")
+                prefix = f"{role}: " if isinstance(role, str) else ""
+                return prefix + content
+            return "\n".join(filter(None, (to_text(item) for item in value.values())))
+        if isinstance(value, (list, tuple)):
+            return "\n".join(filter(None, (to_text(item) for item in value)))
+        return ""
+
     def clean_row(row: dict[str, object]) -> dict[str, str]:
-        value = row[text_column]
-        return {text_column: clean_text(value if isinstance(value, str) else "")}
+        return {text_column: clean_text(to_text(row[text_column]))}
 
     cleaned = dataset.map(clean_row)
     return cleaned.filter(lambda row: len(row[text_column]) >= min_characters)

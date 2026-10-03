@@ -63,6 +63,16 @@ def load_huggingface_text_dataset(
     from datasets import load_dataset
 
     dataset = load_dataset(dataset_name, name=dataset_config, split=split)
+    # UltraChat's OpenBMB release stores each conversation in `data`, while
+    # most text datasets use `text`. Keep `text` as the normal default, but
+    # make the common UltraChat invocation work without an extra flag.
+    if (
+        text_column not in dataset.column_names
+        and text_column == "text"
+        and "data" in dataset.column_names
+    ):
+        print(" Text column 'text' not found; using conversation column 'data'.")
+        text_column = "data"
     cleaned = clean_hf_dataset(dataset, text_column, min_characters)
     text = "\n\n".join(cleaned[text_column])
     if not text:
