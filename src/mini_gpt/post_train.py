@@ -8,6 +8,20 @@ from torch.utils.data import Dataset
 from .model import MiniGPT
 
 
+def _pack_prompt_response(
+    prompt_ids: List[int], response_ids: List[int], block_size: int, pad_token_id: int
+) -> tuple[list[int], list[int]]:
+    """Keep the response and the most recent prompt tokens within the context."""
+    if block_size < 2:
+        raise ValueError("block_size must be at least 2 for prompt/response training")
+    response_ids = response_ids[: block_size - 1]
+    prompt_ids = prompt_ids[-(block_size - len(response_ids)) :]
+    input_ids = prompt_ids + response_ids
+    labels = [-100] * len(prompt_ids) + response_ids
+    pad = block_size - len(input_ids)
+    return input_ids + [pad_token_id] * pad, labels + [-100] * pad
+
+
 class SFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     def __init__(
         self,
@@ -23,14 +37,9 @@ class SFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             p_ids = tokenizer.encode(prompt)
             r_ids = tokenizer.encode(response)
 
-            combined_input = (p_ids + r_ids)[:block_size]
-
-            combined_target = ([-100] * len(p_ids) + r_ids)[:block_size]
-
-            pad_len = block_size - len(combined_input)
-            if pad_len > 0:
-                combined_input += [pad_token_id] * pad_len
-                combined_target += [-100] * pad_len
+            combined_input, combined_target = _pack_prompt_response(
+                p_ids, r_ids, block_size, pad_token_id
+            )
 
             self.samples.append(
                 (
@@ -63,19 +72,12 @@ class DPODataset(Dataset[Dict[str, torch.Tensor]]):
             c_ids = tokenizer.encode(c)
             r_ids = tokenizer.encode(r)
 
-            c_input = (p_ids + c_ids)[:block_size]
-            c_target = ([-100] * len(p_ids) + c_ids)[:block_size]
-            pad_c = block_size - len(c_input)
-            if pad_c > 0:
-                c_input += [pad_token_id] * pad_c
-                c_target += [-100] * pad_c
-
-            r_input = (p_ids + r_ids)[:block_size]
-            r_target = ([-100] * len(p_ids) + r_ids)[:block_size]
-            pad_r = block_size - len(r_input)
-            if pad_r > 0:
-                r_input += [pad_token_id] * pad_r
-                r_target += [-100] * pad_r
+            c_input, c_target = _pack_prompt_response(
+                p_ids, c_ids, block_size, pad_token_id
+            )
+            r_input, r_target = _pack_prompt_response(
+                p_ids, r_ids, block_size, pad_token_id
+            )
 
             self.samples.append(
                 {

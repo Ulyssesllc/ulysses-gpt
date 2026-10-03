@@ -105,8 +105,11 @@ class Trainer:
         total_loss = 0.0
         self.optimizer.zero_grad()
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
+        batches_seen = 0
 
         for step, (x, y) in enumerate(pbar):
+            if self.global_step >= self.config.max_steps:
+                break
             x, y = x.to(self.device), y.to(self.device)
 
             lr = get_cosine_lr(
@@ -144,9 +147,10 @@ class Trainer:
 
             current_loss = loss.item() * self.config.grad_accum_steps
             total_loss += current_loss
+            batches_seen += 1
             pbar.set_postfix({"loss": f"{current_loss:.4f}", "lr": f"{lr:.2e}"})
 
-        avg_loss = total_loss / len(self.train_loader)
+        avg_loss = total_loss / max(1, batches_seen)
         return avg_loss
 
     @torch.no_grad()

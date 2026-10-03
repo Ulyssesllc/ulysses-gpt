@@ -171,10 +171,10 @@ python train.py --dataset data/my_corpus.txt
 python train.py --dataset-url https://example.org/my_corpus.txt
 ```
 
-You can also load a dataset from the Hugging Face Hub. Set `--text-column` to
-the column containing text; `--hf-config` is optional for datasets with named
-configurations. Rows are Unicode-normalized, control characters are removed,
-whitespace is tidied, and empty/short rows are filtered before concatenation.
+You can also load a dataset from the Hugging Face Hub. `--text-column` defaults
+to automatic detection of common text fields (`text`, `content`, `article`,
+`messages`, and others); pass a column name to override it. Rows are normalized
+and encoded in batches, with visible progress and a configurable token limit.
 
 ```bash
 python train.py --hf-dataset wikitext --hf-config wikitext-2-raw-v1 \
@@ -183,13 +183,29 @@ python train.py --hf-dataset wikitext --hf-config wikitext-2-raw-v1 \
 
 The same cleaning rules are applied to local and downloaded text files.
 
-The corpus is encoded with `BPETokenizer("gpt2")` and split sequentially into
-90% training and 10% validation data. It needs at least 1,290 BPE tokens for
-both splits to contain a training window at the current `block_size=128`.
+The Hugging Face `validation` split is used when available; otherwise 5% of
+the training rows are held out deterministically. `--max-tokens` bounds the
+tokenized corpus retained in memory, and `--max-steps` bounds optimizer updates.
+Model size, batch size, context length, learning rate, epochs, seed, and
+checkpoint paths can be set from the command line. Resume a pretraining run
+with `--resume checkpoints/final_minigpt.pt`.
 
-The SFT and DPO examples in `train.py` are still the built-in Shakespeare
-examples. Replace `sft_prompts`/`sft_responses` and `dpo_prompts`/
-`dpo_chosen`/`dpo_rejected` in that file to customize those later stages too.
+SFT and DPO now read real Hugging Face columns and require a pretrained
+checkpoint. For example:
+
+```bash
+python train.py --task sft --hf-dataset org/instructions \
+  --prompt-column prompt --response-column response \
+  --checkpoint checkpoints/final_minigpt.pt
+
+python train.py --task dpo --hf-dataset org/preferences \
+  --prompt-column prompt --chosen-column chosen --rejected-column rejected \
+  --checkpoint checkpoints/final_minigpt.pt
+```
+
+`--max-samples` limits the SFT/DPO examples loaded into memory. These tasks
+expect their respective columns to contain text or common nested conversation
+structures; dataset-specific schemas can be mapped with the column options.
 
 ---
 
