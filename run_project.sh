@@ -22,6 +22,6 @@ fi
 echo -e "\n${BLUE} Step 2: Executing Full LLM Pipeline (src/train_colab.py)...${NC}"
 echo -e "${BLUE}Pipeline: Data Encoding ➔ Pre-training ➔ SFT ➔ DPO ➔ Text Generation${NC}\n"
 
-python3 train_colab.py
+python3 train.py
 
 echo -e "\n${GREEN} Project execution finished successfully!${NC}"

@@ -151,18 +151,45 @@ Open a new **Google Colab** notebook, select **Runtime ➔ T4 GPU**, and run:
 !git clone https://github.com/Ulyssesllc/ulysses-gpt.git
 %cd ulysses-gpt
 !pip install -e ".[dev]" gradio
-!python train_colab.py
+!python train.py
 ```
 
 ---
 
 ## 🌐 Custom Training Datasets
 
-The model supports replacing the Shakespeare dataset with your own data:
+### Choose a pre-training text dataset
 
-- **Pre-training (`.txt`)**: Read raw text, encode it with `BPETokenizer("gpt2")`, and load it into `TextDataset`.
-- **SFT Tuning (`.json`)**: Prepare a list of pairs `[ {"prompt": "...", "response": "..."}, ... ]` and load it into `SFTDataset` (the prompt is automatically masked with `-100`).
-- **DPO Alignment (`.json`)**: Prepare a list of triples `[ {"prompt": "...", "chosen": "...", "rejected": "..."}, ... ]` and load it into `DPOTrainer`.
+`train.py` accepts a local UTF-8 `.txt` corpus or a direct URL to a UTF-8 text file.
+With no option it downloads and uses Tiny Shakespeare, as before.
+
+```bash
+# Use a local text corpus
+python train.py --dataset data/my_corpus.txt
+
+# Download a text file (saved under data/ using the URL filename)
+python train.py --dataset-url https://example.org/my_corpus.txt
+```
+
+You can also load a dataset from the Hugging Face Hub. Set `--text-column` to
+the column containing text; `--hf-config` is optional for datasets with named
+configurations. Rows are Unicode-normalized, control characters are removed,
+whitespace is tidied, and empty/short rows are filtered before concatenation.
+
+```bash
+python train.py --hf-dataset wikitext --hf-config wikitext-2-raw-v1 \
+  --hf-split train --text-column text --min-text-characters 20
+```
+
+The same cleaning rules are applied to local and downloaded text files.
+
+The corpus is encoded with `BPETokenizer("gpt2")` and split sequentially into
+90% training and 10% validation data. It needs at least 1,290 BPE tokens for
+both splits to contain a training window at the current `block_size=128`.
+
+The SFT and DPO examples in `train.py` are still the built-in Shakespeare
+examples. Replace `sft_prompts`/`sft_responses` and `dpo_prompts`/
+`dpo_chosen`/`dpo_rejected` in that file to customize those later stages too.
 
 ---
 
@@ -174,7 +201,7 @@ The `ulysses-gpt` project was built by synthesizing academic and software engine
    - *Materials*: Lecture slides, syllabus, and the MinGPT Default Final Project.
    - *Contribution*: Theoretical foundations for Causal Self-Attention, the Transformer decoder, GPT-2 architecture, SFT instruction tuning, and Direct Preference Optimization (DPO).
 2. **Build a Large Language Model (From Scratch)** (Sebastian Raschka, Manning Publications)
-   - *Materials*: Course content and the `rasbt/LLMs-from-scratch` GitHub repository.
+   - *Materials*: Book content and the `rasbt/LLMs-from-scratch` GitHub repository.
    - *Contribution*: A methodology for implementing a GPT model step by step with pure PyTorch, integrating a BPE tokenizer (`tiktoken`) and a training loop structure.
 
 ---

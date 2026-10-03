@@ -1,6 +1,52 @@
+from __future__ import annotations
+
+import re
+import unicodedata
+from typing import TYPE_CHECKING
+
 import tiktoken
 import torch
 from torch.utils.data import Dataset
+
+if TYPE_CHECKING:
+    from datasets import Dataset as HFDataset
+
+
+def clean_text(text: str) -> str:
+    """Normalize Unicode and whitespace, removing nulls and control codes."""
+    text = unicodedata.normalize("NFKC", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = "".join(
+        char
+        for char in text
+        if char in "\n\t" or not unicodedata.category(char).startswith("C")
+    )
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def clean_hf_dataset(
+    dataset: HFDataset,
+    text_column: str = "text",
+    min_characters: int = 1,
+) -> HFDataset:
+    """Clean a Hugging Face Dataset and discard empty or too-short rows."""
+    if text_column not in dataset.column_names:
+        raise ValueError(
+            f"Text column {text_column!r} not found. Available columns: "
+            f"{dataset.column_names}"
+        )
+    if min_characters < 1:
+        raise ValueError("min_characters must be at least 1")
+
+    def clean_row(row: dict[str, object]) -> dict[str, str]:
+        value = row[text_column]
+        return {text_column: clean_text(value if isinstance(value, str) else "")}
+
+    cleaned = dataset.map(clean_row)
+    return cleaned.filter(lambda row: len(row[text_column]) >= min_characters)
 
 
 class BPETokenizer:
