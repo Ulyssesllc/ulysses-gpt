@@ -14,7 +14,7 @@ def export_to_huggingface(
 ) -> Path:
 
     try:
-        from transformers import GPT2Config, GPT2LMHeadModel, GPT2TokenizerFast
+        from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
     except ImportError as exc:
         raise ImportError(
             "Hugging Face export requires transformers and safetensors. "
@@ -28,7 +28,6 @@ def export_to_huggingface(
     config = GPT2Config(
         vocab_size=source_config.vocab_size,
         n_positions=source_config.block_size,
-        n_ctx=source_config.block_size,
         n_embd=source_config.n_embd,
         n_layer=source_config.n_layer,
         n_head=source_config.n_head,
@@ -47,7 +46,7 @@ def export_to_huggingface(
     setattr(config, "_name_or_path", model_name)
     config.architectures = ["GPT2LMHeadModel"]
 
-    hf_model = GPT2LMHeadModel(config)
+    hf_model = GPT2LMHeadModel(config)  # type: ignore[no-untyped-call]
     source_state = model.state_dict()
     converted_state: dict[str, Tensor] = {}
     linear_projection_weights = (
@@ -80,7 +79,7 @@ def export_to_huggingface(
     hf_model.eval()
     hf_model.save_pretrained(output_path, safe_serialization=True)
 
-    tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+    tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=True)
     tokenizer.model_max_length = source_config.block_size
     tokenizer.save_pretrained(output_path)
 
