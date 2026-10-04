@@ -161,7 +161,7 @@ Open a new **Google Colab** notebook, select **Runtime ➔ T4 GPU**, and run:
 ### Choose a pre-training text dataset
 
 `train.py` accepts a local UTF-8 `.txt` corpus or a direct URL to a UTF-8 text file.
-With no option it downloads and uses Tiny Shakespeare, as before.
+With no option it downloads and uses Tiny Shakespeare.
 
 ```bash
 # Use a local text corpus
