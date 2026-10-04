@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -342,7 +343,12 @@ def main() -> None:
                 for x, y in tqdm(loader, desc=f"SFT epoch {epoch + 1}"):
                     x, y = x.to(device), y.to(device)
                     optimizer.zero_grad(set_to_none=True)
-                    _, loss = model(x, y)
+                    logits, _ = model(x)
+                    loss = F.cross_entropy(
+                        logits[:, :-1, :].contiguous().view(-1, logits.size(-1)),
+                        y[:, 1:].contiguous().view(-1),
+                        ignore_index=-100,
+                    )
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
