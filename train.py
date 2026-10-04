@@ -297,7 +297,7 @@ def main() -> None:
             grad_accum_steps=args.grad_accum_steps,
             device=device,
             checkpoint_dir=args.checkpoint_dir,
-            save_every_steps=100,
+            save_every_steps=10000,
         )
         trainer = Trainer(model, train_loader, valid_loader, trainer_config)
         if args.resume:
