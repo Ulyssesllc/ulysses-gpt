@@ -215,6 +215,10 @@ def main() -> None:
         saved = torch.load(init_path, map_location="cpu", weights_only=False)
         config = saved.get("model_config", config)
     model = MiniGPT(config)
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
     if args.checkpoint or args.resume:
         model.load_state_dict(saved.get("model_state_dict", saved))
 
