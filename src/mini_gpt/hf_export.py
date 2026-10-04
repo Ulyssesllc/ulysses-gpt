@@ -76,7 +76,7 @@ def export_to_huggingface(
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    hf_model.eval()
+    hf_model.eval()  # type: ignore[no-untyped-call]
     hf_model.save_pretrained(output_path, safe_serialization=True)
 
     tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=True)
