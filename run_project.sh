@@ -19,7 +19,7 @@ else
     echo -e "${RED} check_code.sh not found. Proceeding directly to training...${NC}"
 fi
 
-echo -e "\n${BLUE} Step 2: Executing Full LLM Pipeline (src/train_colab.py)...${NC}"
+echo -e "\n${BLUE} Step 2: Executing Full LLM Pipeline (src/train.py)...${NC}"
 echo -e "${BLUE}Pipeline: Data Encoding ➔ Pre-training ➔ SFT ➔ DPO ➔ Text Generation${NC}\n"
 
 python3 train.py
