@@ -1,228 +1,176 @@
-# 🚀 `ulysses-gpt`
+# MiniGPT from Scratch
 
-> **A Production-Ready, End-to-End Generative Transformer Built from Scratch in PyTorch**
+A small decoder-only GPT implemented in PyTorch. The project covers text preprocessing, pretraining, text generation, supervised fine-tuning (SFT), and Direct Preference Optimization (DPO). The `run_project.sh` script can orchestrate these stages as one pipeline.
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch 2.2+](https://img.shields.io/badge/pytorch-2.2+-ee4c2c.svg)](https://pytorch.org/)
-[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Checked with mypy](https://img.shields.io/badge/mypy-strict-blue)](http://mypy-lang.org/)
-[![CI/CD: GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-green.svg)](https://github.com/)
-[![Docker: Ready](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+> This project produces a causal language model, not a ready-made assistant. Output quality depends on the training corpus, model size, and training time. Tiny Shakespeare is provided as a quick-start dataset.
 
-`mini-gpt-scratch` is a complete, optimized, and mathematically rigorous implementation of an autoregressive causal language model (GPT architecture), built entirely from scratch with PyTorch.
+## Features
 
-The project is designed to bridge the gap between foundational deep learning theory (**Stanford CS224N**, **LLMs from Scratch**) and production software engineering practices (**Software Engineering & DevOps**). It covers the complete lifecycle of a modern LLM: **Subword BPE Tokenization ➔ Pre-training (AMP FP16 & Grad Accumulation) ➔ Autoregressive Inference (Temperature Scaling + Top-k) ➔ SFT Instruction Tuning ➔ DPO Preference Alignment ➔ CI/CD & Docker Containerization**.
+- **Decoder-only Transformer:** causal self-attention, pre-layer normalization, residual connections, and tied token/output embeddings.
+- **GPT-2 BPE tokenizer:** `tiktoken` encoding with a 50,257-token vocabulary.
+- **Pretraining:** next-token prediction, local/URL/Hugging Face text sources, validation metrics, cosine learning-rate decay with warmup, gradient accumulation, gradient clipping, and CUDA automatic mixed precision.
+- **Checkpointing:** saves model, optimizer, scaler, training step, and model configuration; supports resuming pretraining.
+- **Generation:** autoregressive sampling with temperature and top-k filtering.
+- **SFT:** trains on prompt/response pairs and masks prompt tokens from the response loss.
+- **DPO:** preference alignment with a frozen reference model and chosen/rejected response pairs.
+- **Engineering:** pytest suite, Ruff, Mypy, GitHub Actions, and Docker support.
 
----
+## Requirements and installation
 
-## 🔑 Core Features
-
-- **Causal Transformer Architecture (Decoder-Only)**:
-  - Multi-Head Causal Self-Attention with causal masking (lower-triangular mask), enforcing the $O(N^2)$ causal attention principle.
-  - Pre-Layer Normalization and Residual Connections for stable gradient flow.
-  - Weight tying between the token embedding and LM output head to reduce the parameter count.
-- **Subword BPE Tokenizer (`tiktoken`)**:
-  - Integrated GPT-2 BPE encoder (`vocab_size = 50,257`), providing 2.5x–3x higher text compression density than a character tokenizer.
-- **Resource-Efficient Pre-training Engine**:
-  - **Automatic Mixed Precision (AMP FP16)** reduces GPU VRAM usage by 50%.
-  - **Gradient Accumulation** simulates a larger effective batch size on a T4 GPU (Google Colab / Kaggle).
-  - **Cosine Annealing Learning Rate Scheduler** with linear warmup.
-  - **Automatic Checkpointing** saves and restores the state of the `model`, `optimizer`, `scaler`, and `global_step`.
-  - Automatic Perplexity evaluation ($PPL = e^{\text{Loss}}$) and validation tracking.
-- **Autoregressive Text Generation Engine**:
-  - Autoregressive sampling with integrated **Temperature Scaling** and **Top-k Filtering**.
-- **Post-Training & Alignment**:
-  - **Supervised Fine-Tuning (SFT)** with Prompt Masking (`-100` target loss ignoring).
-  - **Direct Preference Optimization (DPO)** using a dual-model architecture (Policy Model vs. Frozen Reference Model) with Reward Margin tracking.
-- **Software Engineering & CI/CD Workflow**:
-  - Standard PEP 621 package declaration (`pyproject.toml`).
-  - Strict static type checking (`mypy`), linting/formatting (`ruff`), and 100% passing unit tests (`pytest`).
-  - Container packaging with **Dockerfile** and automated shell scripts (`check_code.sh`, `run_project.sh`).
-  - **GitHub Actions CI/CD** workflow for automated testing.
-
----
-
-## 📐 Theory & Mathematical Foundations
-
-### 1. Causal Self-Attention
-
-For an input token sequence $X \in \mathbb{R}^{B \times T \times d_{\text{model}}}$, Queries ($Q$), Keys ($K$), and Values ($V$) are calculated through linear projections:
-
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} + M\right)V$$
-
-Here, $M_{i,j} = 0$ when $i \ge j$ and $-\infty$ when $i < j$ (the lower-triangular mask).
-
-### 2. Autoregressive Pre-Training Loss
-
-Cross-Entropy Loss evaluates next-token prediction:
-
-$$\mathcal{L}_{\text{Pretrain}}(\theta) = -\frac{1}{T} \sum_{t=1}^{T} \log P_\theta(x_t \mid x_1, x_2, \dots, x_{t-1})$$
-
-### 3. Direct Preference Optimization (DPO) Loss
-
-DPO directly aligns model preferences using chosen ($y_w$) and rejected ($y_l$) response pairs under the Bradley-Terry model, without requiring a separate reward model:
-
-$$\mathcal{L}_{\text{DPO}}(\theta) = -\mathbb{E}_{(x, y_w, y_l)} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w \mid x)}{\pi_{\text{ref}}(y_w \mid x)} - \beta \log \frac{\pi_\theta(y_l \mid x)}{\pi_{\text{ref}}(y_l \mid x)} \right) \right]$$
-
----
-
-## 📂 Project Structure
-
-```text
-ulysses-gpt/
-├── .github/
-│   └── workflows/
-│       └── ci.yml             # GitHub Actions CI/CD workflow
-├── pyproject.toml             # PEP 621, Ruff, Mypy, and Pytest configuration
-├── Dockerfile                 # Docker container packaging
-├── check_code.sh              # Fail-fast code quality check script
-├── run_project.sh             # Script for running the complete project pipeline
-├── README.md                  # Detailed project documentation
-├── src/
-│   ├── __init__.py            # Main exports (MiniGPT, GPTConfig, tokenizers, etc.)
-│   ├── model.py               # Causal Self-Attention, MLP, and MiniGPT architecture
-│   ├── dataset.py             # BPETokenizer (tiktoken) and sliding-window dataset
-│   ├── trainer.py             # Pre-training engine (AMP FP16, Cosine LR, checkpointing)
-│   ├── generate.py            # Autoregressive sampling (Temperature, Top-k)
-│   └── post_train.py          # SFT masking and DPO alignment engine  
-unit tests
-├── tests/
-│    ├── __init__.py
-│    ├── test_model.py          # Tensor shape, masking, and loss unit tests
-│    ├── test_trainer.py        # Trainer loop and checkpointing unit tests
-│    └── test_post_train.py     # SFT masking, log-probability, and DPO loss │
-└── train.py         # End-to-end training pipeline
-```
-
----
-
-## ⚙️ Default Model Configuration (`GPTConfig`)
-
-| Hyperparameter | Default Value | Description |
-| :--- | :--- | :--- |
-| **Parameters** | `~3.5M` – `15M` | Suitable for fast training on a Colab T4 GPU |
-| **Embedding Dim (`n_embd`)** | `256` / `384` | Transformer hidden dimension |
-| **Attention Heads (`n_head`)** | `4` / `6` | Number of attention heads (`head_dim = n_embd / n_head`) |
-| **Layers (`n_layer`)** | `4` / `6` | Number of Transformer decoder blocks |
-| **Context Length (`block_size`)** | `128` / `256` | Maximum context length |
-| **Vocab Size (`vocab_size`)** | `50,257` | GPT-2 standard BPE vocabulary size |
-| **Optimizer** | `AdamW` | `lr=1e-3, beta1=0.9, beta2=0.95, weight_decay=0.1` |
-
----
-
-## 🛠️ Installation & Usage
-
-### 1. Local Setup
+- Python 3.12 or later
+- PyTorch 2.2 or later
+- A CUDA GPU is recommended for training; CPU is supported but slower.
 
 ```bash
-# Clone the repository
-!git clone https://github.com/Ulyssesllc/ulysses-gpt.git
-%cd ulysses-gpt
+python -m venv .venv
+source .venv/bin/activate        # Windows PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+```
 
-# Create and activate a virtual environment
-python3 -m venv venv
-source venv/bin/activate
+Install development tools when needed:
 
-# Install the package in editable mode with development dependencies
+```bash
 pip install -e ".[dev]"
 ```
 
-### 2. Code Quality Checks & Unit Tests
+## Run the full pipeline
 
-Grant execute permission and run the fail-fast validation script:
-
-```bash
-chmod +x check_code.sh
-./check_code.sh
-```
-
-### 3. Run the Local Training Pipeline
+Run from a Bash shell (Linux, macOS, WSL, Git Bash, or Google Colab):
 
 ```bash
-chmod +x run_project.sh
-./run_project.sh
+bash run_project.sh
 ```
 
-### 4. Run the End-to-End Demo & Chatbot UI on Google Colab
+With no dataset settings, the script downloads Tiny Shakespeare and runs pretraining. SFT and DPO run only when their dataset IDs are configured. The script stops on errors and writes the final checkpoint path to `CHECKPOINT_DIR/final_model_path.txt`.
 
-Open a new **Google Colab** notebook, select **Runtime ➔ T4 GPU**, and run:
+To see all supported environment variables and defaults:
+
+```bash
+bash run_project.sh --help
+```
+
+### Pretraining data
+
+Set at most one source. Hugging Face text columns are detected automatically by default; set `TEXT_COLUMN` to select one explicitly.
+
+```bash
+# Local UTF-8 text file
+export PRETRAIN_DATASET="data/corpus.txt"
+
+# Or a URL to a UTF-8 text file
+# export PRETRAIN_DATASET_URL="https://example.org/corpus.txt"
+
+# Or a Hugging Face dataset
+# export PRETRAIN_HF_DATASET="Salesforce/wikitext"
+# export PRETRAIN_HF_CONFIG="wikitext-2-raw-v1"
+# export PRETRAIN_HF_SPLIT="train"
+# export TEXT_COLUMN="text"
+
+export CHECKPOINT_DIR="checkpoints"
+export MAX_STEPS=2000
+export MAX_TOKENS=2000000
+export BLOCK_SIZE=128
+export BATCH_SIZE=8
+export GRAD_ACCUM_STEPS=2
+export N_LAYER=4
+export N_HEAD=4
+export N_EMBD=256
+bash run_project.sh
+```
+
+The default limits are intended as a starting point, not as a quality target. Increase training steps and use a representative corpus for a useful model. `N_EMBD` must be divisible by `N_HEAD`.
+
+To resume pretraining from a checkpoint:
+
+```bash
+export RESUME_FROM="checkpoints/checkpoint_step_500.pt"
+bash run_project.sh
+```
+
+Use the same model configuration and compatible training data when resuming.
+
+### Optional SFT and DPO
+
+SFT expects prompt and response columns. DPO expects prompt, chosen, and rejected columns. Each stage can use a separate Hugging Face dataset and config.
+
+```bash
+export SFT_HF_DATASET="your-org/instruction-data"
+export PROMPT_COLUMN="prompt"
+export RESPONSE_COLUMN="response"
+export SFT_EPOCHS=1
+export SFT_MAX_SAMPLES=2000
+export SFT_LR=0.0001
+
+export DPO_HF_DATASET="your-org/preference-data"
+export CHOSEN_COLUMN="chosen"
+export REJECTED_COLUMN="rejected"
+export DPO_EPOCHS=1
+export DPO_MAX_SAMPLES=2000
+export DPO_LR=0.000005
+
+bash run_project.sh
+```
+
+DPO starts from the SFT checkpoint when SFT is enabled; otherwise it starts from the pretrained checkpoint. Both stages are skipped when their dataset variables are empty. Dataset schemas vary, so set the column names to match your data.
+
+### Pipeline settings
+
+Common pretraining settings include `CHECKPOINT_DIR`, `BLOCK_SIZE`, `BATCH_SIZE`, `GRAD_ACCUM_STEPS`, `EPOCHS`, `MAX_STEPS`, `MAX_TOKENS`, `MAX_VAL_TOKENS`, `LEARNING_RATE`, `N_LAYER`, `N_HEAD`, `N_EMBD`, `SEED`, and `PROMPT`. Dataset and checkpoint options are listed by `bash run_project.sh --help`.
+
+Set `RUN_CHECKS=1` to run Ruff, Mypy, and pytest before training. The default is `0` so training does not run the quality suite on every launch.
+
+
+## Load a trained model and generate text
+
+The pipeline saves `final_minigpt.pt` for pretraining, `sft_minigpt.pt` after SFT, and `dpo_minigpt.pt` after DPO. The final stage's checkpoint is recorded in `final_model_path.txt`.
 
 ```python
-!git clone https://github.com/Ulyssesllc/ulysses-gpt.git
-%cd ulysses-gpt
-!pip install -e ".[dev]" gradio
-!python train.py
+import torch
+from mini_gpt.dataset import BPETokenizer
+from mini_gpt.generate import generate
+from mini_gpt.model import MiniGPT
+
+checkpoint = torch.load(
+    "checkpoints/final_minigpt.pt",
+    map_location="cpu",
+    weights_only=False,
+)
+model = MiniGPT(checkpoint["model_config"])
+model.load_state_dict(checkpoint["model_state_dict"])
+model.eval()
+
+tokenizer = BPETokenizer("gpt2")
+prompt = torch.tensor([tokenizer.encode("Hello")], dtype=torch.long)
+tokens = generate(model, prompt, max_new_tokens=80, temperature=0.8, top_k=40)
+print(tokenizer.decode(tokens[0].tolist()))
 ```
 
----
+Checkpoints serialize a Python `GPTConfig` object. Use `weights_only=False` only with checkpoints you trust. Install this project before importing `mini_gpt`.
 
-## 🌐 Custom Training Datasets
-
-### Choose a pre-training text dataset
-
-`train.py` accepts a local UTF-8 `.txt` corpus or a direct URL to a UTF-8 text file.
-With no option it downloads and uses Tiny Shakespeare.
+## Development checks
 
 ```bash
-# Use a local text corpus
-python train.py --dataset data/my_corpus.txt
-
-# Download a text file (saved under data/ using the URL filename)
-python train.py --dataset-url https://example.org/my_corpus.txt
+bash check_code.sh
 ```
 
-You can also load a dataset from the Hugging Face Hub. `--text-column` defaults
-to automatic detection of common text fields (`text`, `content`, `article`,
-`messages`, and others); pass a column name to override it. Rows are normalized
-and encoded in batches, with visible progress and a configurable token limit.
+This runs Ruff, Mypy, and pytest when those tools are installed. CI also runs these checks and builds the Docker image.
 
-```bash
-python train.py --hf-dataset Salesforce/wikitext --hf-config wikitext-2-raw-v1 \
-  --hf-split train --text-column text --min-text-characters 20
+## Project layout
+
+```text
+src/mini_gpt/
+  model.py       Transformer model and configuration
+  dataset.py     Text cleaning, tokenizers, and next-token dataset
+  trainer.py     Pretraining loop, metrics, and checkpoint management
+  generate.py    Autoregressive text generation
+  post_train.py  SFT/DPO datasets, losses, and DPO trainer
+train.py         Dataset loading and task entry point
+run_project.sh   Environment-configured end-to-end pipeline
+check_code.sh    Lint, type-check, and test runner
+tests/           Unit tests
 ```
 
-The same cleaning rules are applied to local and downloaded text files.
+## License
 
-The Hugging Face `validation` split is used when available; otherwise 5% of
-the training rows are held out deterministically. `--max-tokens` bounds the
-tokenized corpus retained in memory, and `--max-steps` bounds optimizer updates.
-Model size, batch size, context length, learning rate, epochs, seed, and
-checkpoint paths can be set from the command line. Resume a pretraining run
-with `--resume checkpoints/final_minigpt.pt`.
-
-SFT and DPO now read real Hugging Face columns and require a pretrained
-checkpoint. For example:
-
-```bash
-python train.py --task sft --hf-dataset org/instructions \
-  --prompt-column prompt --response-column response \
-  --checkpoint checkpoints/final_minigpt.pt
-
-python train.py --task dpo --hf-dataset org/preferences \
-  --prompt-column prompt --chosen-column chosen --rejected-column rejected \
-  --checkpoint checkpoints/final_minigpt.pt
-```
-
-`--max-samples` limits the SFT/DPO examples loaded into memory. These tasks
-expect their respective columns to contain text or common nested conversation
-structures; dataset-specific schemas can be mapped with the column options.
-
----
-
-## 📚 References & Acknowledgments
-
-The `ulysses-gpt` project was built by synthesizing academic and software engineering resources from the following sources:
-
-1. **Stanford CS224N: Natural Language Processing with Deep Learning** (Prof. Christopher Manning, Prof. Diyi Yang, Shikhar Murty)
-   - *Materials*: Lecture slides, syllabus, and the MinGPT Default Final Project.
-   - *Contribution*: Theoretical foundations for Causal Self-Attention, the Transformer decoder, GPT-2 architecture, SFT instruction tuning, and Direct Preference Optimization (DPO).
-2. **Build a Large Language Model (From Scratch)** (Sebastian Raschka, Manning Publications)
-   - *Materials*: Book content and the `rasbt/LLMs-from-scratch` GitHub repository.
-   - *Contribution*: A methodology for implementing a GPT model step by step with pure PyTorch, integrating a BPE tokenizer (`tiktoken`) and a training loop structure.
-
----
-
-## 📜 License
-
-This project is distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
