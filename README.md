@@ -85,13 +85,14 @@ ulysses-gpt/
 │   ├── dataset.py             # BPETokenizer (tiktoken) and sliding-window dataset
 │   ├── trainer.py             # Pre-training engine (AMP FP16, Cosine LR, checkpointing)
 │   ├── generate.py            # Autoregressive sampling (Temperature, Top-k)
-│   ├── post_train.py          # SFT masking and DPO alignment engine
-│   └── train_colab.py         # End-to-end training pipeline for Colab
-└── tests/
-    ├── __init__.py
-    ├── test_model.py          # Tensor shape, masking, and loss unit tests
-    ├── test_trainer.py        # Trainer loop and checkpointing unit tests
-    └── test_post_train.py     # SFT masking, log-probability, and DPO loss unit tests
+│   └── post_train.py          # SFT masking and DPO alignment engine  
+unit tests
+├── tests/
+│    ├── __init__.py
+│    ├── test_model.py          # Tensor shape, masking, and loss unit tests
+│    ├── test_trainer.py        # Trainer loop and checkpointing unit tests
+│    └── test_post_train.py     # SFT masking, log-probability, and DPO loss │
+└── train.py         # End-to-end training pipeline
 ```
 
 ---
