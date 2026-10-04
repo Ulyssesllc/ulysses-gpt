@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-# End-to-end MiniGPT training pipeline.
-# Configure stages through environment variables; see README.md and the Colab notebook.
+# End-to-end ulysses-gpt training pipeline.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +18,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Usage: bash run_project.sh
 
 Runs pretraining, then SFT and DPO when their Hugging Face dataset variables are set.
-The final checkpoint path is written to CHECKPOINT_DIR/final_model_path.txt.
+The Hugging Face model directory is written to CHECKPOINT_DIR/final_model_path.txt.
 
 Main environment variables:
   PYTHON_BIN                 Python executable (default: python3)
@@ -46,9 +45,10 @@ Optional DPO (runs when DPO_HF_DATASET is non-empty):
   DPO_HF_DATASET, DPO_HF_CONFIG, DPO_HF_SPLIT
   CHOSEN_COLUMN, REJECTED_COLUMN, DPO_EPOCHS, DPO_MAX_SAMPLES, DPO_LR
 
-SFT starts from final_minigpt.pt. DPO starts from sft_minigpt.pt when SFT ran,
-otherwise it starts from final_minigpt.pt. The model from the last enabled stage
+SFT starts from ulysses-gpt-pretrain.pt. DPO starts from ulysses-gpt-sft.pt when
+SFT ran, otherwise it starts from ulysses-gpt-pretrain.pt. The last enabled stage
 is the final model.
+Hugging Face export runs once, after the last enabled stage completes.
 HELP
     exit 0
 fi
@@ -62,7 +62,6 @@ if [[ "${RUN_CHECKS:-0}" == "1" ]]; then
     bash "$ROOT/check_code.sh"
 fi
 
-# Fail early for conflicting pretraining data sources.
 source_count=0
 [[ -n "${PRETRAIN_DATASET:-}" ]] && ((source_count += 1))
 [[ -n "${PRETRAIN_DATASET_URL:-}" ]] && ((source_count += 1))
@@ -115,7 +114,7 @@ fi
 
 echo -e "${BLUE}Stage 1/3: pretraining${NC}"
 "$PYTHON_BIN" "$ROOT/train.py" "${pretrain_args[@]}"
-PRETRAIN_CHECKPOINT="$CHECKPOINT_DIR/final_minigpt.pt"
+PRETRAIN_CHECKPOINT="$CHECKPOINT_DIR/ulysses-gpt-pretrain.pt"
 [[ -f "$PRETRAIN_CHECKPOINT" ]] || { echo "Pretraining checkpoint missing: $PRETRAIN_CHECKPOINT" >&2; exit 1; }
 FINAL_MODEL="$PRETRAIN_CHECKPOINT"
 
@@ -137,7 +136,7 @@ if [[ -n "${SFT_HF_DATASET:-}" ]]; then
     [[ -n "${SFT_HF_CONFIG:-}" ]] && sft_args+=(--hf-config "$SFT_HF_CONFIG")
     echo -e "${BLUE}Stage 2/3: supervised fine-tuning (SFT)${NC}"
     "$PYTHON_BIN" "$ROOT/train.py" "${sft_args[@]}"
-    SFT_CHECKPOINT="$CHECKPOINT_DIR/sft_minigpt.pt"
+    SFT_CHECKPOINT="$CHECKPOINT_DIR/ulysses-gpt-sft.pt"
     [[ -f "$SFT_CHECKPOINT" ]] || { echo "SFT checkpoint missing: $SFT_CHECKPOINT" >&2; exit 1; }
     FINAL_MODEL="$SFT_CHECKPOINT"
 fi
@@ -163,10 +162,16 @@ if [[ -n "${DPO_HF_DATASET:-}" ]]; then
     [[ -n "${DPO_HF_CONFIG:-}" ]] && dpo_args+=(--hf-config "$DPO_HF_CONFIG")
     echo -e "${BLUE}Stage 3/3: Direct Preference Optimization (DPO)${NC}"
     "$PYTHON_BIN" "$ROOT/train.py" "${dpo_args[@]}"
-    DPO_CHECKPOINT="$CHECKPOINT_DIR/dpo_minigpt.pt"
+    DPO_CHECKPOINT="$CHECKPOINT_DIR/ulysses-gpt-dpo.pt"
     [[ -f "$DPO_CHECKPOINT" ]] || { echo "DPO checkpoint missing: $DPO_CHECKPOINT" >&2; exit 1; }
     FINAL_MODEL="$DPO_CHECKPOINT"
 fi
 
-printf '%s\n' "$FINAL_MODEL" > "$CHECKPOINT_DIR/final_model_path.txt"
-echo -e "${GREEN}Pipeline complete. Final model: $FINAL_MODEL${NC}"
+HF_MODEL_DIR="$CHECKPOINT_DIR/ulysses-gpt"
+echo -e "${BLUE}Exporting the final training checkpoint to Hugging Face format...${NC}"
+PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m mini_gpt.hf_export \
+    --checkpoint "$FINAL_MODEL" \
+    --output-dir "$HF_MODEL_DIR" \
+    --model-name "ulysses-gpt"
+printf '%s\n' "$HF_MODEL_DIR" > "$CHECKPOINT_DIR/final_model_path.txt"
+echo -e "${GREEN}ulysses-gpt pipeline complete. Hugging Face model: $HF_MODEL_DIR${NC}"

@@ -58,7 +58,6 @@ def _choose_column(dataset: Any, requested: str, preferred: tuple[str, ...]) -> 
 def _load_hf_split(name: str, config: str | None, split: str) -> Any:
     from datasets import load_dataset
 
-    # Hugging Face expects owner/repo IDs. Keep the common legacy shortcut usable.
     if name == "wikitext":
         name = "Salesforce/wikitext"
     elif "/" not in name:
@@ -79,7 +78,6 @@ def _texts(dataset: Any, column: str, min_characters: int = 1):
 def _encode_texts(
     texts: Any, tokenizer: BPETokenizer, max_tokens: int, label: str
 ) -> torch.Tensor:
-    """Encode in batches and cap retained tokens to bound host memory."""
     token_chunks: list[torch.Tensor] = []
     token_count = 0
     print(f" Encoding {label} (limit: {max_tokens:,} tokens)...", flush=True)
@@ -137,7 +135,7 @@ def _load_local_text(path: str | None, url: str | None) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Train MiniGPT on configurable datasets."
+        description="Train ulysses-gpt on configurable datasets."
     )
     parser.add_argument(
         "--task", choices=("pretrain", "sft", "dpo"), default="pretrain"
@@ -318,7 +316,7 @@ def main() -> None:
             )
             if trainer.global_step >= total_steps:
                 break
-        trainer.save_checkpoint("final_minigpt.pt")
+        trainer.save_checkpoint("ulysses-gpt-pretrain.pt")
 
     else:
         dataset = _load_hf_split(args.hf_dataset, args.hf_config, args.hf_split)
@@ -357,7 +355,7 @@ def main() -> None:
             Path(args.checkpoint_dir).mkdir(parents=True, exist_ok=True)
             torch.save(
                 {"model_state_dict": model.state_dict(), "model_config": config},
-                Path(args.checkpoint_dir) / "sft_minigpt.pt",
+                Path(args.checkpoint_dir) / "ulysses-gpt-sft.pt",
             )
         else:
             required = (args.prompt_column, args.chosen_column, args.rejected_column)
@@ -390,7 +388,7 @@ def main() -> None:
             Path(args.checkpoint_dir).mkdir(parents=True, exist_ok=True)
             torch.save(
                 {"model_state_dict": model.state_dict(), "model_config": config},
-                Path(args.checkpoint_dir) / "dpo_minigpt.pt",
+                Path(args.checkpoint_dir) / "ulysses-gpt-dpo.pt",
             )
 
     model.eval().to(device)

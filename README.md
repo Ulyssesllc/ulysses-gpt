@@ -1,6 +1,6 @@
-# MiniGPT from Scratch
+# ulysses-gpt
 
-A small decoder-only GPT implemented in PyTorch. The project covers text preprocessing, pretraining, text generation, supervised fine-tuning (SFT), and Direct Preference Optimization (DPO). The `run_project.sh` script can orchestrate these stages as one pipeline.
+A small decoder-only GPT implemented in PyTorch and exported as a Hugging Face-compatible GPT-2 model. The project covers text preprocessing, pretraining, text generation, supervised fine-tuning (SFT), and Direct Preference Optimization (DPO). The `run_project.sh` script can orchestrate these stages as one pipeline.
 
 > This project produces a causal language model, not a ready-made assistant. Output quality depends on the training corpus, model size, and training time. Tiny Shakespeare is provided as a quick-start dataset.
 
@@ -10,6 +10,7 @@ A small decoder-only GPT implemented in PyTorch. The project covers text preproc
 - **GPT-2 BPE tokenizer:** `tiktoken` encoding with a 50,257-token vocabulary.
 - **Pretraining:** next-token prediction, local/URL/Hugging Face text sources, validation metrics, cosine learning-rate decay with warmup, gradient accumulation, gradient clipping, and CUDA automatic mixed precision.
 - **Checkpointing:** saves model, optimizer, scaler, training step, and model configuration; supports resuming pretraining.
+- **Hugging Face export:** after the final enabled training stage, writes `config.json`, `model.safetensors`, and GPT-2 tokenizer files to a `ulysses-gpt/` model directory. It loads through `AutoModelForCausalLM` and `AutoTokenizer`.
 - **Generation:** autoregressive sampling with temperature and top-k filtering.
 - **SFT:** trains on prompt/response pairs and masks prompt tokens from the response loss.
 - **DPO:** preference alignment with a frozen reference model and chosen/rejected response pairs.
@@ -42,7 +43,7 @@ Run from a Bash shell (Linux, macOS, WSL, Git Bash, or Google Colab):
 bash run_project.sh
 ```
 
-With no dataset settings, the script downloads Tiny Shakespeare and runs pretraining. SFT and DPO run only when their dataset IDs are configured. The script stops on errors and writes the final checkpoint path to `CHECKPOINT_DIR/final_model_path.txt`.
+With no dataset settings, the script downloads Tiny Shakespeare and runs pretraining. SFT and DPO run only when their dataset IDs are configured. The script stops on errors and exports the final model to `CHECKPOINT_DIR/ulysses-gpt/` and writes that directory path to `CHECKPOINT_DIR/final_model_path.txt`.
 
 To see all supported environment variables and defaults:
 
@@ -84,7 +85,7 @@ The default limits are intended as a starting point, not as a quality target. In
 To resume pretraining from a checkpoint:
 
 ```bash
-export RESUME_FROM="checkpoints/checkpoint_step_500.pt"
+export RESUME_FROM="checkpoints/ulysses-gpt-pretrain.pt"
 bash run_project.sh
 ```
 
@@ -121,32 +122,33 @@ Common pretraining settings include `CHECKPOINT_DIR`, `BLOCK_SIZE`, `BATCH_SIZE`
 Set `RUN_CHECKS=1` to run Ruff, Mypy, and pytest before training. The default is `0` so training does not run the quality suite on every launch.
 
 
+## Model artifacts
+
+The pipeline keeps native training checkpoints (`ulysses-gpt-pretrain.pt`, `ulysses-gpt-sft.pt`, and `ulysses-gpt-dpo.pt`) for stage-to-stage training and resume. After all enabled stages finish, it exports only the final checkpoint to `CHECKPOINT_DIR/ulysses-gpt/` in Hugging Face format. The final directory contains `config.json`, `model.safetensors`, tokenizer files, and a model card. `final_model_path.txt` records this directory.
+
+The export uses the standard Hugging Face GPT-2 architecture and tokenizer. Its `model_name` metadata is `ulysses-gpt`; its Transformers `model_type` remains `gpt2` so standard Transformers classes can load it without custom remote code.
+
 ## Load a trained model and generate text
 
-The pipeline saves `final_minigpt.pt` for pretraining, `sft_minigpt.pt` after SFT, and `dpo_minigpt.pt` after DPO. The final stage's checkpoint is recorded in `final_model_path.txt`.
-
 ```python
-import torch
-from mini_gpt.dataset import BPETokenizer
-from mini_gpt.generate import generate
-from mini_gpt.model import MiniGPT
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-checkpoint = torch.load(
-    "checkpoints/final_minigpt.pt",
-    map_location="cpu",
-    weights_only=False,
+model_dir = "checkpoints/ulysses-gpt"
+tokenizer = AutoTokenizer.from_pretrained(model_dir)
+model = AutoModelForCausalLM.from_pretrained(model_dir)
+
+inputs = tokenizer("Hello", return_tensors="pt")
+output = model.generate(
+    **inputs,
+    max_new_tokens=80,
+    do_sample=True,
+    temperature=0.8,
+    top_k=40,
 )
-model = MiniGPT(checkpoint["model_config"])
-model.load_state_dict(checkpoint["model_state_dict"])
-model.eval()
-
-tokenizer = BPETokenizer("gpt2")
-prompt = torch.tensor([tokenizer.encode("Hello")], dtype=torch.long)
-tokens = generate(model, prompt, max_new_tokens=80, temperature=0.8, top_k=40)
-print(tokenizer.decode(tokens[0].tolist()))
+print(tokenizer.decode(output[0], skip_special_tokens=True))
 ```
 
-Checkpoints serialize a Python `GPTConfig` object. Use `weights_only=False` only with checkpoints you trust. Install this project before importing `mini_gpt`.
+Native `.pt` training checkpoints serialize a Python `GPTConfig` object and should only be loaded with `weights_only=False` when trusted. For standard inference and sharing, use the Hugging Face directory shown above.
 
 ## Development checks
 
@@ -164,6 +166,7 @@ src/mini_gpt/
   dataset.py     Text cleaning, tokenizers, and next-token dataset
   trainer.py     Pretraining loop, metrics, and checkpoint management
   generate.py    Autoregressive text generation
+  hf_export.py   Hugging Face GPT-2 and tokenizer export
   post_train.py  SFT/DPO datasets, losses, and DPO trainer
 train.py         Dataset loading and task entry point
 run_project.sh   Environment-configured end-to-end pipeline
