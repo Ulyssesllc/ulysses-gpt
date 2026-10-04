@@ -154,24 +154,36 @@ class Trainer:
         return avg_loss
 
     @torch.no_grad()
-    def evaluate(self) -> Tuple[float, float]:
+    def evaluate_metrics(self) -> dict[str, float]:
         if not self.val_loader:
-            return 0.0, float("inf")
+            return {"loss": 0.0, "perplexity": float("inf"), "accuracy": 0.0}
 
         self.model.eval()
         total_loss = 0.0
+        total_tokens = 0
+        correct_tokens = 0
         for x, y in self.val_loader:
             x, y = x.to(self.device), y.to(self.device)
             with torch.amp.autocast(
                 self.device_type,
                 enabled=(self.device_type == "cuda"),
             ):
-                _, loss = self.model(x, y)
-            total_loss += loss.item()
+                logits, loss = self.model(x, y)
+            token_count = y.numel()
+            total_loss += loss.item() * token_count
+            total_tokens += token_count
+            correct_tokens += (logits.argmax(dim=-1) == y).sum().item()
 
-        avg_loss = total_loss / len(self.val_loader)
+        avg_loss = total_loss / max(1, total_tokens)
         perplexity = math.exp(avg_loss) if avg_loss < 20 else float("inf")
-        return avg_loss, perplexity
+        accuracy = correct_tokens / max(1, total_tokens)
+        return {"loss": avg_loss, "perplexity": perplexity, "accuracy": accuracy}
+
+    @torch.no_grad()
+    def evaluate(self) -> Tuple[float, float]:
+        """Return validation loss and perplexity (kept for API compatibility)."""
+        metrics = self.evaluate_metrics()
+        return metrics["loss"], metrics["perplexity"]
 
     def save_checkpoint(self, filename: str) -> str:
         filepath = os.path.join(self.config.checkpoint_dir, filename)

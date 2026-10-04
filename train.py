@@ -304,10 +304,12 @@ def main() -> None:
             trainer.load_checkpoint(args.resume)
         for epoch in range(1, args.epochs + 1):
             train_loss = trainer.train_epoch(epoch)
-            val_loss, ppl = trainer.evaluate()
+            metrics = trainer.evaluate_metrics()
             print(
                 f"Epoch {epoch}: train={train_loss:.4f}, "
-                f"val={val_loss:.4f}, ppl={ppl:.2f}"
+                f"val={metrics['loss']:.4f}, "
+                f"ppl={metrics['perplexity']:.2f}, "
+                f"next-token-acc={metrics['accuracy']:.2%}"
             )
             if trainer.global_step >= total_steps:
                 break
