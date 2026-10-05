@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+export PYTHONUNBUFFERED=1
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$ROOT/checkpoints}"
 mkdir -p "$CHECKPOINT_DIR"
 

@@ -250,7 +250,7 @@ def main() -> None:
                     "data",
                 ),
             )
-            print(f"Using text column {text_column!r}")
+            print(f"Using text column {text_column!r}", flush=True)
             train_hf = train_hf.shuffle(seed=args.seed)
             train_texts = _texts(train_hf, text_column, args.min_text_characters)
             try:
@@ -267,7 +267,10 @@ def main() -> None:
                     )
                 )
                 valid_texts = _texts(valid_hf, valid_column, args.min_text_characters)
-                print(f"Using dataset validation split {args.validation_split!r}")
+                print(
+                    f"Using dataset validation split {args.validation_split!r}",
+                    flush=True,
+                )
             except ValueError as exc:
                 print(
                     f"Validation split unavailable ({exc}); splitting train data 95/5."
@@ -344,7 +347,13 @@ def main() -> None:
         trainer.save_checkpoint("ulysses-gpt-pretrain.pt")
 
     else:
+        print(
+            f"Loading Hugging Face dataset {args.hf_dataset!r} "
+            f"(split={args.hf_split!r})...",
+            flush=True,
+        )
         dataset = _load_hf_split(args.hf_dataset, args.hf_config, args.hf_split)
+        print(f"Loaded {len(dataset):,} rows.", flush=True)
         if args.task == "sft":
             required = (args.prompt_column, args.response_column)
             missing = [col for col in required if col not in dataset.column_names]
