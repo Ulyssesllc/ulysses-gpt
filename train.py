@@ -377,9 +377,7 @@ def main() -> None:
             count = min(len(dataset), args.max_samples)
             rows = [
                 dataset[i]
-                for i in tqdm(
-                    range(count), desc="Reading SFT rows", unit="sample"
-                )
+                for i in tqdm(range(count), desc="Reading SFT rows", unit="sample")
             ]
             validation_count = max(1, int(count * 0.05)) if count > 1 else 0
             train_rows = rows[:-validation_count] if validation_count else rows
@@ -536,9 +534,7 @@ def main() -> None:
             count = min(len(dataset), args.max_samples)
             rows = [
                 dataset[i]
-                for i in tqdm(
-                    range(count), desc="Reading DPO rows", unit="sample"
-                )
+                for i in tqdm(range(count), desc="Reading DPO rows", unit="sample")
             ]
             prompts = [_stringify(row[args.prompt_column]) for row in rows]
             chosen = [_stringify(row[args.chosen_column]) for row in rows]
