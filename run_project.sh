@@ -5,8 +5,20 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
 export PYTHONUNBUFFERED=1
+
+if [[ "${1:-}" == "--env-file" || "${1:-}" == "--config" ]]; then
+    if [[ $# -ne 2 || ! -f "$2" ]]; then
+        echo "Usage: bash run_project.sh --env-file PATH_TO_ENV_FILE" >&2
+        exit 2
+    fi
+    ENV_FILE="$2"
+    shift 2
+    set -a
+    source "$ENV_FILE"
+    set +a
+fi
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$ROOT/checkpoints}"
 mkdir -p "$CHECKPOINT_DIR"
 
@@ -16,10 +28,12 @@ NC='\033[0m'
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     cat <<'HELP'
-Usage: bash run_project.sh
+Usage: bash run_project.sh [--env-file PATH_TO_ENV_FILE]
 
 Runs pretraining, then SFT and DPO when their Hugging Face dataset variables are set.
 The Hugging Face model directory is written to CHECKPOINT_DIR/final_model_path.txt.
+An optional .env file may set the environment variables below. It uses Bash
+assignment syntax and is sourced as a trusted file.
 
 Main environment variables:
   PYTHON_BIN                 Python executable (default: python3)

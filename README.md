@@ -37,13 +37,23 @@ pip install -e ".[dev]"
 
 ## Run the full pipeline
 
-Run from a Bash shell (Linux, macOS, WSL, Git Bash, or Google Colab):
+Run from a Bash shell (Linux, macOS, WSL, Git Bash, or a notebook shell cell):
 
 ```bash
 bash run_project.sh
 ```
 
 With no dataset settings, the script downloads Tiny Shakespeare and runs pretraining. SFT and DPO run only when their dataset IDs are configured. The script stops on errors and exports the final model to `CHECKPOINT_DIR/ulysses-gpt/` and writes that directory path to `CHECKPOINT_DIR/final_model_path.txt`.
+
+Progress bars for pretraining, SFT, and DPO update during training when the
+terminal supports interactive output. SFT reports response loss in its progress
+bar; DPO reports loss, reward margin, and win rate. In notebook environments,
+run the script as a single `!` shell command to preserve live output; a `%%bash`
+cell may buffer output until the cell finishes:
+
+```python
+!bash run_project.sh
+```
 
 To see all supported environment variables and defaults:
 
@@ -123,6 +133,45 @@ Common pretraining settings include `CHECKPOINT_DIR`, `BLOCK_SIZE`, `BATCH_SIZE`
 
 Set `RUN_CHECKS=1` to run Ruff, Mypy, and pytest before training. The default is `0` so training does not run the quality suite on every launch.
 
+### Reusable `.env` training configuration
+
+Copy `configs/training.env.example` to `.env`, then edit the dataset, model,
+training, and optional SFT/DPO values for your environment. Run the same config
+on a local machine, server, or notebook with:
+
+```bash
+bash run_project.sh --env-file .env
+```
+
+The file uses Bash assignment syntax and is sourced by the pipeline, so only
+load `.env` files you trust. Keep secrets out of it; dataset credentials should
+be supplied through your environment or secret manager. Use `CHECKPOINT_DIR` to
+point at storage that persists beyond the current machine or notebook session.
+Each run writes stage checkpoints, the final Hugging Face model in
+`CHECKPOINT_DIR/ulysses-gpt/`, and its location in
+`CHECKPOINT_DIR/final_model_path.txt`. Set optional SFT/DPO dataset variables to
+enable those stages; blank or commented variables skip them. Use a separate
+output directory for each independent experiment, and tune batch size, block
+size, model dimensions, and training budget to your hardware and corpus.
+
+The repository also includes `configs/full_pipeline.env`, a larger example
+configuration with Dolly SFT and preference optimization settings. It sets the
+WikiText-2 config and split, but leaves `PRETRAIN_HF_DATASET` unset; add
+`PRETRAIN_HF_DATASET="Salesforce/wikitext"` to that file if you want WikiText-2
+pretraining instead of the default Tiny Shakespeare corpus. Review and edit
+dataset and resource values before running it:
+
+```bash
+bash run_project.sh --env-file configs/full_pipeline.env
+```
+
+In Kaggle or Colab, the same command can be run in a single-line shell cell to
+stream progress output:
+
+```python
+!bash run_project.sh --env-file configs/full_pipeline.env
+```
+
 
 ## Model artifacts
 
@@ -184,6 +233,7 @@ src/mini_gpt/
 train.py         Dataset loading and task entry point
 run_project.sh   Environment-configured end-to-end pipeline
 check_code.sh    Lint, type-check, and test runner
+configs/         Reusable example training configurations
 tests/           Unit tests
 ```
 
