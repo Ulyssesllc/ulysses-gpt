@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from .model import MiniGPT
 
@@ -70,7 +71,12 @@ class SFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     ):
         self.samples = []
 
-        for prompt, response in zip(prompts, responses):
+        for prompt, response in tqdm(
+            zip(prompts, responses),
+            total=min(len(prompts), len(responses)),
+            desc="Preparing SFT samples",
+            unit="sample",
+        ):
             p_ids = tokenizer.encode(prompt)
             r_ids = tokenizer.encode(response)
 
@@ -105,7 +111,12 @@ class DPODataset(Dataset[Dict[str, torch.Tensor]]):
     ):
         self.samples = []
 
-        for p, c, r in zip(prompts, chosen_responses, rejected_responses):
+        for p, c, r in tqdm(
+            zip(prompts, chosen_responses, rejected_responses),
+            total=min(len(prompts), len(chosen_responses), len(rejected_responses)),
+            desc="Preparing DPO samples",
+            unit="sample",
+        ):
             p_ids = tokenizer.encode(p)
             c_ids = tokenizer.encode(c)
             r_ids = tokenizer.encode(r)

@@ -104,7 +104,16 @@ class Trainer:
         self.model.train()
         total_loss = 0.0
         self.optimizer.zero_grad()
-        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
+        remaining_steps = max(0, self.config.max_steps - self.global_step)
+        expected_batches = min(
+            len(self.train_loader),
+            remaining_steps * self.config.grad_accum_steps,
+        )
+        pbar = tqdm(
+            self.train_loader,
+            total=expected_batches,
+            desc=f"Epoch {epoch}",
+        )
         batches_seen = 0
 
         for step, (x, y) in enumerate(pbar):

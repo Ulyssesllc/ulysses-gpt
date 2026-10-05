@@ -115,7 +115,7 @@ fi
 [[ -n "${RESUME_FROM:-}" ]] && pretrain_args+=(--resume "$RESUME_FROM")
 
 echo -e "${BLUE}Stage 1/3: pretraining${NC}"
-"$PYTHON_BIN" "$ROOT/train.py" "${pretrain_args[@]}"
+    "$PYTHON_BIN" "$ROOT/train.py" "${pretrain_args[@]}" 2>&1
 PRETRAIN_CHECKPOINT="$CHECKPOINT_DIR/ulysses-gpt-pretrain.pt"
 [[ -f "$PRETRAIN_CHECKPOINT" ]] || { echo "Pretraining checkpoint missing: $PRETRAIN_CHECKPOINT" >&2; exit 1; }
 FINAL_MODEL="$PRETRAIN_CHECKPOINT"
@@ -139,7 +139,7 @@ if [[ -n "${SFT_HF_DATASET:-}" ]]; then
     )
     [[ -n "${SFT_HF_CONFIG:-}" ]] && sft_args+=(--hf-config "$SFT_HF_CONFIG")
     echo -e "${BLUE}Stage 2/3: supervised fine-tuning (SFT)${NC}"
-    "$PYTHON_BIN" "$ROOT/train.py" "${sft_args[@]}"
+    "$PYTHON_BIN" "$ROOT/train.py" "${sft_args[@]}" 2>&1
     SFT_CHECKPOINT="$CHECKPOINT_DIR/ulysses-gpt-sft.pt"
     [[ -f "$SFT_CHECKPOINT" ]] || { echo "SFT checkpoint missing: $SFT_CHECKPOINT" >&2; exit 1; }
     FINAL_MODEL="$SFT_CHECKPOINT"
@@ -165,7 +165,7 @@ if [[ -n "${DPO_HF_DATASET:-}" ]]; then
     )
     [[ -n "${DPO_HF_CONFIG:-}" ]] && dpo_args+=(--hf-config "$DPO_HF_CONFIG")
     echo -e "${BLUE}Stage 3/3: Direct Preference Optimization (DPO)${NC}"
-    "$PYTHON_BIN" "$ROOT/train.py" "${dpo_args[@]}"
+    "$PYTHON_BIN" "$ROOT/train.py" "${dpo_args[@]}" 2>&1
     DPO_CHECKPOINT="$CHECKPOINT_DIR/ulysses-gpt-dpo.pt"
     [[ -f "$DPO_CHECKPOINT" ]] || { echo "DPO checkpoint missing: $DPO_CHECKPOINT" >&2; exit 1; }
     FINAL_MODEL="$DPO_CHECKPOINT"
@@ -176,6 +176,6 @@ echo -e "${BLUE}Exporting the final training checkpoint to Hugging Face format..
 PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m mini_gpt.hf_export \
     --checkpoint "$FINAL_MODEL" \
     --output-dir "$HF_MODEL_DIR" \
-    --model-name "ulysses-gpt"
+    --model-name "ulysses-gpt" 2>&1
 printf '%s\n' "$HF_MODEL_DIR" > "$CHECKPOINT_DIR/final_model_path.txt"
 echo -e "${GREEN}ulysses-gpt pipeline complete. Hugging Face model: $HF_MODEL_DIR${NC}"

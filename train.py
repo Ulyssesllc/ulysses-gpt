@@ -236,7 +236,13 @@ def main() -> None:
 
     if args.task == "pretrain":
         if args.hf_dataset:
+            print(
+                f"Loading Hugging Face dataset {args.hf_dataset!r} "
+                f"(split={args.hf_split!r})...",
+                flush=True,
+            )
             train_hf = _load_hf_split(args.hf_dataset, args.hf_config, args.hf_split)
+            print(f"Loaded {len(train_hf):,} training rows.", flush=True)
             text_column = _choose_column(
                 train_hf,
                 args.text_column,
@@ -252,11 +258,17 @@ def main() -> None:
             )
             print(f"Using text column {text_column!r}", flush=True)
             train_hf = train_hf.shuffle(seed=args.seed)
+            print("Prepared shuffled training split.", flush=True)
             train_texts = _texts(train_hf, text_column, args.min_text_characters)
             try:
+                print(
+                    f"Loading validation split {args.validation_split!r}...",
+                    flush=True,
+                )
                 valid_hf = _load_hf_split(
                     args.hf_dataset, args.hf_config, args.validation_split
                 )
+                print(f"Loaded {len(valid_hf):,} validation rows.", flush=True)
                 valid_column = (
                     text_column
                     if text_column in valid_hf.column_names
@@ -363,7 +375,12 @@ def main() -> None:
                 )
             dataset = dataset.shuffle(seed=args.seed)
             count = min(len(dataset), args.max_samples)
-            rows = [dataset[i] for i in range(count)]
+            rows = [
+                dataset[i]
+                for i in tqdm(
+                    range(count), desc="Reading SFT rows", unit="sample"
+                )
+            ]
             validation_count = max(1, int(count * 0.05)) if count > 1 else 0
             train_rows = rows[:-validation_count] if validation_count else rows
             validation_rows = rows[-validation_count:] if validation_count else []
@@ -517,11 +534,15 @@ def main() -> None:
                     f"DPO columns missing: {missing}; available: {dataset.column_names}"
                 )
             count = min(len(dataset), args.max_samples)
-            prompts = [_stringify(dataset[i][args.prompt_column]) for i in range(count)]
-            chosen = [_stringify(dataset[i][args.chosen_column]) for i in range(count)]
-            rejected = [
-                _stringify(dataset[i][args.rejected_column]) for i in range(count)
+            rows = [
+                dataset[i]
+                for i in tqdm(
+                    range(count), desc="Reading DPO rows", unit="sample"
+                )
             ]
+            prompts = [_stringify(row[args.prompt_column]) for row in rows]
+            chosen = [_stringify(row[args.chosen_column]) for row in rows]
+            rejected = [_stringify(row[args.rejected_column]) for row in rows]
             post_data = DPODataset(
                 prompts,
                 chosen,
