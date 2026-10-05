@@ -36,5 +36,7 @@ def rouge_l(prediction: str, reference: str) -> float:
             )
         previous = current
     lcs = previous[-1]
+    if lcs == 0:
+        return 0.0
     precision, recall = lcs / len(pred), lcs / len(ref)
     return 2 * precision * recall / (precision + recall)
