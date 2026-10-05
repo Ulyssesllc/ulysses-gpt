@@ -456,9 +456,7 @@ def main() -> None:
                         logits, _ = model(x, y)
                         labels = y[:, 1:].contiguous().view(-1)
                         loss = F.cross_entropy(
-                            logits[:, :-1, :]
-                            .contiguous()
-                            .view(-1, logits.size(-1)),
+                            logits[:, :-1, :].contiguous().view(-1, logits.size(-1)),
                             labels,
                             ignore_index=-100,
                         )
