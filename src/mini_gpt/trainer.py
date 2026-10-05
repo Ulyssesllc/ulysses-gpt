@@ -1,5 +1,6 @@
 import math
 import os
+import sys
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -113,6 +114,7 @@ class Trainer:
             self.train_loader,
             total=expected_batches,
             desc=f"Epoch {epoch}",
+            disable=not sys.stderr.isatty(),
         )
         batches_seen = 0
 
@@ -158,6 +160,17 @@ class Trainer:
             total_loss += current_loss
             batches_seen += 1
             pbar.set_postfix({"loss": f"{current_loss:.4f}", "lr": f"{lr:.2e}"})
+            if (
+                not sys.stderr.isatty()
+                and self.global_step > 0
+                and self.global_step % 100 == 0
+                and (step + 1) % self.config.grad_accum_steps == 0
+            ):
+                print(
+                    f"Epoch {epoch}: step={self.global_step}/{self.config.max_steps}, "
+                    f"loss={current_loss:.4f}, lr={lr:.2e}",
+                    flush=True,
+                )
 
         avg_loss = total_loss / max(1, batches_seen)
         return avg_loss

@@ -1,4 +1,5 @@
 import argparse
+import sys
 import urllib.request
 from itertools import islice
 from pathlib import Path
@@ -83,7 +84,12 @@ def _encode_texts(
     token_count = 0
     print(f" Encoding {label} (limit: {max_tokens:,} tokens)...", flush=True)
     iterator = iter(texts)
-    with tqdm(desc=f"Tokenizing {label}", unit="batch") as progress:
+    interactive_progress = sys.stderr.isatty()
+    with tqdm(
+        desc=f"Tokenizing {label}",
+        unit="batch",
+        disable=not interactive_progress,
+    ) as progress:
         while token_count < max_tokens:
             batch = list(islice(iterator, 256))
             if not batch:
@@ -107,6 +113,12 @@ def _encode_texts(
                 if token_count >= max_tokens:
                     break
             progress.update(1)
+            if not interactive_progress and progress.n % 10 == 0:
+                print(
+                    f"Tokenizing {label}: batches={progress.n}, "
+                    f"tokens={token_count:,}/{max_tokens:,}",
+                    flush=True,
+                )
     if not token_chunks:
         raise ValueError(f"No tokens found in {label} data.")
     data = torch.cat(token_chunks).long()
@@ -420,7 +432,15 @@ def main() -> None:
             for epoch in range(args.epochs):
                 total_loss = 0.0
                 total_response_tokens = 0
-                for x, y in tqdm(loader, desc=f"SFT epoch {epoch + 1}"):
+                interactive_progress = sys.stderr.isatty()
+                for batch_index, (x, y) in enumerate(
+                    tqdm(
+                        loader,
+                        desc=f"SFT epoch {epoch + 1}",
+                        disable=not interactive_progress,
+                    ),
+                    start=1,
+                ):
                     x, y = x.to(device), y.to(device)
                     optimizer.zero_grad(set_to_none=True)
                     logits, _ = model(x, y)
@@ -436,6 +456,13 @@ def main() -> None:
                     response_tokens = int((labels != -100).sum().item())
                     total_loss += loss.item() * response_tokens
                     total_response_tokens += response_tokens
+                    if not interactive_progress and batch_index % 100 == 0:
+                        print(
+                            f"SFT epoch {epoch + 1}: "
+                            f"batch={batch_index}/{len(loader)}, "
+                            f"response_loss={loss.item():.4f}",
+                            flush=True,
+                        )
                 metrics = {
                     "stage": "sft",
                     "epoch": epoch + 1,
@@ -552,7 +579,12 @@ def main() -> None:
             for epoch in range(args.epochs):
                 epoch_metrics: list[dict[str, float]] = []
                 for step, batch in enumerate(
-                    tqdm(loader, desc=f"DPO epoch {epoch + 1}"), 1
+                    tqdm(
+                        loader,
+                        desc=f"DPO epoch {epoch + 1}",
+                        disable=not sys.stderr.isatty(),
+                    ),
+                    1,
                 ):
                     metrics = trainer.train_step(batch)
                     epoch_metrics.append(metrics)
