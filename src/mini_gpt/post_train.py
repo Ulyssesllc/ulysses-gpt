@@ -199,10 +199,14 @@ class DPOTrainer:
         self.optimizer.step()
 
         reward_margin = chosen_reward - rejected_reward
+        chosen_rewards = self.beta * (pi_chosen_logps - ref_chosen_logps).detach()
+        rejected_rewards = self.beta * (pi_rejected_logps - ref_rejected_logps).detach()
+        win_rate = (chosen_rewards > rejected_rewards).float().mean().item()
 
         return {
             "dpo_loss": loss.item(),
             "chosen_reward": chosen_reward.item(),
             "rejected_reward": rejected_reward.item(),
             "reward_margin": reward_margin.item(),
+            "win_rate": win_rate,
         }

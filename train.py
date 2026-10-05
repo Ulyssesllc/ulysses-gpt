@@ -10,7 +10,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from mini_gpt.dataset import BPETokenizer, TextDataset, clean_text
-from mini_gpt.generate import generate
+from mini_gpt.generate import generate, generate_with_metrics
+from mini_gpt.metrics import append_metrics, exact_match, rouge_l
 from mini_gpt.model import GPTConfig, MiniGPT
 from mini_gpt.post_train import DPODataset, DPOTrainer, SFTDataset
 from mini_gpt.trainer import Trainer, TrainerConfig
@@ -176,6 +177,12 @@ def main() -> None:
         default=10_000,
         help="Maximum SFT/DPO examples to keep in memory.",
     )
+    parser.add_argument(
+        "--eval-samples",
+        type=int,
+        default=16,
+        help="Maximum SFT validation responses to generate for ROUGE-L/EM.",
+    )
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--n-layer", type=int, default=4)
     parser.add_argument("--n-head", type=int, default=4)
@@ -314,6 +321,18 @@ def main() -> None:
                 f"ppl={metrics['perplexity']:.2f}, "
                 f"next-token-acc={metrics['accuracy']:.2%}"
             )
+            append_metrics(
+                str(Path(args.checkpoint_dir) / "metrics.jsonl"),
+                {
+                    "stage": "pretrain",
+                    "epoch": epoch,
+                    "step": trainer.global_step,
+                    "train_loss": train_loss,
+                    "validation_cross_entropy": metrics["loss"],
+                    "perplexity": metrics["perplexity"],
+                    "next_token_accuracy": metrics["accuracy"],
+                },
+            )
             if trainer.global_step >= total_steps:
                 break
         trainer.save_checkpoint("ulysses-gpt-pretrain.pt")
@@ -327,31 +346,124 @@ def main() -> None:
                 raise ValueError(
                     f"SFT columns missing: {missing}; available: {dataset.column_names}"
                 )
+            dataset = dataset.shuffle(seed=args.seed)
             count = min(len(dataset), args.max_samples)
-            prompts = [_stringify(dataset[i][args.prompt_column]) for i in range(count)]
-            responses = [
-                _stringify(dataset[i][args.response_column]) for i in range(count)
+            rows = [dataset[i] for i in range(count)]
+            validation_count = max(1, int(count * 0.05)) if count > 1 else 0
+            train_rows = rows[:-validation_count] if validation_count else rows
+            validation_rows = rows[-validation_count:] if validation_count else []
+            prompts = [_stringify(row[args.prompt_column]) for row in train_rows]
+            responses = [_stringify(row[args.response_column]) for row in train_rows]
+            validation_prompts = [
+                _stringify(row[args.prompt_column]) for row in validation_rows
+            ]
+            validation_responses = [
+                _stringify(row[args.response_column]) for row in validation_rows
             ]
             post_data = SFTDataset(prompts, responses, tokenizer, args.block_size)
             loader = DataLoader(post_data, batch_size=args.batch_size, shuffle=True)
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
             model.to(device).train()
             for epoch in range(args.epochs):
-                total = 0.0
+                total_loss = 0.0
+                total_response_tokens = 0
                 for x, y in tqdm(loader, desc=f"SFT epoch {epoch + 1}"):
                     x, y = x.to(device), y.to(device)
                     optimizer.zero_grad(set_to_none=True)
-                    logits, _ = model(x)
+                    logits, _ = model(x, y)
+                    labels = y[:, 1:].contiguous().view(-1)
                     loss = F.cross_entropy(
                         logits[:, :-1, :].contiguous().view(-1, logits.size(-1)),
-                        y[:, 1:].contiguous().view(-1),
+                        labels,
                         ignore_index=-100,
                     )
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
-                    total += loss.item()
-                print(f"SFT epoch {epoch + 1}: loss={total / max(1, len(loader)):.4f}")
+                    response_tokens = int((labels != -100).sum().item())
+                    total_loss += loss.item() * response_tokens
+                    total_response_tokens += response_tokens
+                metrics = {
+                    "stage": "sft",
+                    "epoch": epoch + 1,
+                    "response_loss": total_loss / max(1, total_response_tokens),
+                    "response_tokens": total_response_tokens,
+                }
+                if validation_rows:
+                    model.eval()
+                    val_loss_sum = 0.0
+                    val_token_count = 0
+                    for start in range(0, len(validation_prompts), args.batch_size):
+                        end = start + args.batch_size
+                        val_batch = SFTDataset(
+                            validation_prompts[start:end],
+                            validation_responses[start:end],
+                            tokenizer,
+                            args.block_size,
+                        )
+                        val_loader = DataLoader(val_batch, batch_size=args.batch_size)
+                        for val_x, val_y in val_loader:
+                            val_x, val_y = val_x.to(device), val_y.to(device)
+                            val_logits, _ = model(val_x, val_y)
+                            val_labels = val_y[:, 1:].contiguous().view(-1)
+                            val_sum = F.cross_entropy(
+                                val_logits[:, :-1, :]
+                                .contiguous()
+                                .view(-1, val_logits.size(-1)),
+                                val_labels,
+                                ignore_index=-100,
+                                reduction="sum",
+                            )
+                            val_loss_sum += val_sum.item()
+                            val_token_count += int((val_labels != -100).sum().item())
+                    metrics["validation_response_loss"] = val_loss_sum / max(
+                        1, val_token_count
+                    )
+                    rouge_scores = []
+                    exact_matches = []
+                    eval_count = min(args.eval_samples, len(validation_prompts))
+                    for prompt, reference in zip(
+                        validation_prompts[:eval_count],
+                        validation_responses[:eval_count],
+                    ):
+                        prompt_ids = tokenizer.encode(prompt)[-(args.block_size - 1) :]
+                        if not prompt_ids:
+                            prompt_ids = [0]
+                        input_ids = torch.tensor(
+                            [prompt_ids], dtype=torch.long, device=device
+                        )
+                        output = generate(
+                            model,
+                            input_ids,
+                            max_new_tokens=min(80, args.block_size - len(prompt_ids)),
+                            temperature=0.8,
+                            top_k=40,
+                        )
+                        prediction = tokenizer.decode(
+                            output[0, len(prompt_ids) :].tolist()
+                        )
+                        rouge_scores.append(rouge_l(prediction, reference))
+                        exact_matches.append(exact_match(prediction, reference))
+                    metrics["rouge_l"] = sum(rouge_scores) / max(1, len(rouge_scores))
+                    metrics["exact_match"] = sum(exact_matches) / max(
+                        1, len(exact_matches)
+                    )
+                    model.train()
+                print(
+                    f"SFT epoch {epoch + 1}: "
+                    f"response_loss={metrics['response_loss']:.4f}"
+                    + (
+                        f", val_response_loss="
+                        f"{metrics['validation_response_loss']:.4f}, "
+                        f"rouge_l={metrics['rouge_l']:.4f}, "
+                        f"em={metrics['exact_match']:.2%}"
+                        if validation_rows
+                        else ""
+                    )
+                )
+                append_metrics(
+                    str(Path(args.checkpoint_dir) / "metrics.jsonl"), metrics
+                )
             Path(args.checkpoint_dir).mkdir(parents=True, exist_ok=True)
             torch.save(
                 {"model_state_dict": model.state_dict(), "model_config": config},
@@ -376,15 +488,41 @@ def main() -> None:
             loader = DataLoader(post_data, batch_size=args.batch_size, shuffle=True)
             trainer = DPOTrainer(model, lr=args.learning_rate, device=device)
             for epoch in range(args.epochs):
+                epoch_metrics: list[dict[str, float]] = []
                 for step, batch in enumerate(
                     tqdm(loader, desc=f"DPO epoch {epoch + 1}"), 1
                 ):
                     metrics = trainer.train_step(batch)
+                    epoch_metrics.append(metrics)
                     if step % 20 == 0:
                         print(
                             f"DPO step {step}: loss={metrics['dpo_loss']:.4f}, "
-                            f"margin={metrics['reward_margin']:.4f}"
+                            f"margin={metrics['reward_margin']:.4f}, "
+                            f"win_rate={metrics['win_rate']:.2%}"
                         )
+                summary = {
+                    "stage": "dpo",
+                    "epoch": epoch + 1,
+                    **{
+                        name: sum(item[name] for item in epoch_metrics)
+                        / max(1, len(epoch_metrics))
+                        for name in (
+                            "dpo_loss",
+                            "chosen_reward",
+                            "rejected_reward",
+                            "reward_margin",
+                            "win_rate",
+                        )
+                    },
+                }
+                print(
+                    f"DPO epoch {epoch + 1}: loss={summary['dpo_loss']:.4f}, "
+                    f"margin={summary['reward_margin']:.4f}, "
+                    f"win_rate={summary['win_rate']:.2%}"
+                )
+                append_metrics(
+                    str(Path(args.checkpoint_dir) / "metrics.jsonl"), summary
+                )
             Path(args.checkpoint_dir).mkdir(parents=True, exist_ok=True)
             torch.save(
                 {"model_state_dict": model.state_dict(), "model_config": config},
@@ -393,13 +531,18 @@ def main() -> None:
 
     model.eval().to(device)
     ids = torch.tensor([tokenizer.encode(args.prompt)], dtype=torch.long, device=device)
+    sampled, inference_metrics = generate_with_metrics(
+        model, ids, max_new_tokens=80, temperature=0.8, top_k=40
+    )
+    print("Sample:", tokenizer.decode(sampled[0].tolist()))
     print(
-        "Sample:",
-        tokenizer.decode(
-            generate(model, ids, max_new_tokens=80, temperature=0.8, top_k=40)[
-                0
-            ].tolist()
-        ),
+        f"Inference: TTFT={inference_metrics['ttft_seconds']:.3f}s, "
+        "throughput="
+        f"{inference_metrics['throughput_tokens_per_second']:.2f} tokens/s"
+    )
+    append_metrics(
+        str(Path(args.checkpoint_dir) / "metrics.jsonl"),
+        {"stage": "inference", **inference_metrics},
     )
 
 

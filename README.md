@@ -158,6 +158,17 @@ bash check_code.sh
 
 This runs Ruff, Mypy, and pytest when those tools are installed. CI also runs these checks and builds the Docker image.
 
+## Training and inference metrics
+
+Each run appends JSON Lines records to `CHECKPOINT_DIR/metrics.jsonl`:
+
+- Pretraining: training loss, validation cross-entropy, perplexity, and next-token accuracy.
+- SFT: response-only masked loss, validation response loss, ROUGE-L, and exact match. The SFT dataset reserves 5% for validation when at least two examples are available; generation-based scores use at most `--eval-samples` examples (default 16).
+- DPO: implicit loss, chosen/rejected reward, reward margin, and chosen-over-rejected win rate.
+- Final sample generation: time to first token (TTFT), generation duration, and tokens per second.
+
+ROUGE-L and exact match use whitespace-tokenized, lowercased/whitespace-normalized text. Exact match is therefore normalized exact match, not byte-for-byte equality. The repository does not currently include a Gradio UI or an external LLM judge; the inference timing helper can be reused by a serving UI, while judge scores require a separately configured evaluation provider.
+
 ## Project layout
 
 ```text
