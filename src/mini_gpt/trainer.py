@@ -66,7 +66,7 @@ class Trainer:
         self.optimizer = self.configure_optimizer()
 
         self.device_type = "cuda" if "cuda" in self.device else "cpu"
-        self.scaler = torch.amp.GradScaler(  # type: ignore[attr-defined]
+        self.scaler = torch.amp.GradScaler(
             self.device_type,
             enabled=(self.device_type == "cuda"),
         )
@@ -122,7 +122,7 @@ class Trainer:
             for param_group in self.optimizer.param_groups:
                 param_group["lr"] = lr
 
-            with torch.amp.autocast(  # type: ignore[attr-defined]
+            with torch.amp.autocast(
                 self.device_type,
                 enabled=(self.device_type == "cuda"),
             ):
@@ -164,7 +164,7 @@ class Trainer:
         correct_tokens = 0
         for x, y in self.val_loader:
             x, y = x.to(self.device), y.to(self.device)
-            with torch.amp.autocast(  # type: ignore[attr-defined]
+            with torch.amp.autocast(
                 self.device_type,
                 enabled=(self.device_type == "cuda"),
             ):
