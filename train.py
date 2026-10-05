@@ -427,76 +427,81 @@ def main() -> None:
                 eos_token_id=eot_token_id,
             )
             loader = DataLoader(post_data, batch_size=args.batch_size, shuffle=True)
+            validation_loader = None
+            if validation_rows:
+                validation_data = SFTDataset(
+                    validation_prompts,
+                    validation_responses,
+                    tokenizer,
+                    args.block_size,
+                    eos_token_id=eot_token_id,
+                )
+                validation_loader = DataLoader(
+                    validation_data, batch_size=args.batch_size
+                )
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
             model.to(device).train()
             for epoch in range(args.epochs):
                 total_loss = 0.0
                 total_response_tokens = 0
                 interactive_progress = sys.stderr.isatty()
-                for batch_index, (x, y) in enumerate(
-                    tqdm(
-                        loader,
-                        desc=f"SFT epoch {epoch + 1}",
-                        disable=not interactive_progress,
-                    ),
-                    start=1,
-                ):
-                    x, y = x.to(device), y.to(device)
-                    optimizer.zero_grad(set_to_none=True)
-                    logits, _ = model(x, y)
-                    labels = y[:, 1:].contiguous().view(-1)
-                    loss = F.cross_entropy(
-                        logits[:, :-1, :].contiguous().view(-1, logits.size(-1)),
-                        labels,
-                        ignore_index=-100,
-                    )
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                    optimizer.step()
-                    response_tokens = int((labels != -100).sum().item())
-                    total_loss += loss.item() * response_tokens
-                    total_response_tokens += response_tokens
-                    if not interactive_progress and batch_index % 100 == 0:
-                        print(
-                            f"SFT epoch {epoch + 1}: "
-                            f"batch={batch_index}/{len(loader)}, "
-                            f"response_loss={loss.item():.4f}",
-                            flush=True,
+                with tqdm(
+                    loader,
+                    desc=f"SFT epoch {epoch + 1}",
+                    disable=not interactive_progress,
+                ) as progress:
+                    for batch_index, (x, y) in enumerate(progress, start=1):
+                        x, y = x.to(device), y.to(device)
+                        optimizer.zero_grad(set_to_none=True)
+                        logits, _ = model(x, y)
+                        labels = y[:, 1:].contiguous().view(-1)
+                        loss = F.cross_entropy(
+                            logits[:, :-1, :]
+                            .contiguous()
+                            .view(-1, logits.size(-1)),
+                            labels,
+                            ignore_index=-100,
                         )
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                        optimizer.step()
+                        response_tokens = int((labels != -100).sum().item())
+                        total_loss += loss.item() * response_tokens
+                        total_response_tokens += response_tokens
+                        progress.set_postfix(
+                            response_loss=f"{loss.item():.4f}", refresh=False
+                        )
+                        if not interactive_progress and batch_index % 100 == 0:
+                            print(
+                                f"SFT epoch {epoch + 1}: "
+                                f"batch={batch_index}/{len(loader)}, "
+                                f"response_loss={loss.item():.4f}",
+                                flush=True,
+                            )
                 metrics = {
                     "stage": "sft",
                     "epoch": epoch + 1,
                     "response_loss": total_loss / max(1, total_response_tokens),
                     "response_tokens": total_response_tokens,
                 }
-                if validation_rows:
+                if validation_loader is not None:
                     model.eval()
                     val_loss_sum = 0.0
                     val_token_count = 0
-                    for start in range(0, len(validation_prompts), args.batch_size):
-                        end = start + args.batch_size
-                        val_batch = SFTDataset(
-                            validation_prompts[start:end],
-                            validation_responses[start:end],
-                            tokenizer,
-                            args.block_size,
-                            eos_token_id=eot_token_id,
+                    for val_x, val_y in validation_loader:
+                        val_x, val_y = val_x.to(device), val_y.to(device)
+                        val_logits, _ = model(val_x, val_y)
+                        val_labels = val_y[:, 1:].contiguous().view(-1)
+                        val_sum = F.cross_entropy(
+                            val_logits[:, :-1, :]
+                            .contiguous()
+                            .view(-1, val_logits.size(-1)),
+                            val_labels,
+                            ignore_index=-100,
+                            reduction="sum",
                         )
-                        val_loader = DataLoader(val_batch, batch_size=args.batch_size)
-                        for val_x, val_y in val_loader:
-                            val_x, val_y = val_x.to(device), val_y.to(device)
-                            val_logits, _ = model(val_x, val_y)
-                            val_labels = val_y[:, 1:].contiguous().view(-1)
-                            val_sum = F.cross_entropy(
-                                val_logits[:, :-1, :]
-                                .contiguous()
-                                .view(-1, val_logits.size(-1)),
-                                val_labels,
-                                ignore_index=-100,
-                                reduction="sum",
-                            )
-                            val_loss_sum += val_sum.item()
-                            val_token_count += int((val_labels != -100).sum().item())
+                        val_loss_sum += val_sum.item()
+                        val_token_count += int((val_labels != -100).sum().item())
                     metrics["validation_response_loss"] = val_loss_sum / max(
                         1, val_token_count
                     )
@@ -539,7 +544,7 @@ def main() -> None:
                         f"{metrics['validation_response_loss']:.4f}, "
                         f"rouge_l={metrics['rouge_l']:.4f}, "
                         f"em={metrics['exact_match']:.2%}"
-                        if validation_rows
+                        if validation_loader is not None
                         else ""
                     )
                 )
@@ -578,22 +583,28 @@ def main() -> None:
             trainer = DPOTrainer(model, lr=args.learning_rate, device=device)
             for epoch in range(args.epochs):
                 epoch_metrics: list[dict[str, float]] = []
-                for step, batch in enumerate(
-                    tqdm(
-                        loader,
-                        desc=f"DPO epoch {epoch + 1}",
-                        disable=not sys.stderr.isatty(),
-                    ),
-                    1,
-                ):
-                    metrics = trainer.train_step(batch)
-                    epoch_metrics.append(metrics)
-                    if step % 20 == 0:
-                        print(
-                            f"DPO step {step}: loss={metrics['dpo_loss']:.4f}, "
-                            f"margin={metrics['reward_margin']:.4f}, "
-                            f"win_rate={metrics['win_rate']:.2%}"
+                interactive_progress = sys.stderr.isatty()
+                with tqdm(
+                    loader,
+                    desc=f"DPO epoch {epoch + 1}",
+                    disable=not interactive_progress,
+                ) as progress:
+                    for step, batch in enumerate(progress, 1):
+                        metrics = trainer.train_step(batch)
+                        epoch_metrics.append(metrics)
+                        progress.set_postfix(
+                            loss=f"{metrics['dpo_loss']:.4f}",
+                            margin=f"{metrics['reward_margin']:.3f}",
+                            win_rate=f"{metrics['win_rate']:.0%}",
+                            refresh=False,
                         )
+                        if not interactive_progress and step % 20 == 0:
+                            print(
+                                f"DPO step {step}: loss={metrics['dpo_loss']:.4f}, "
+                                f"margin={metrics['reward_margin']:.4f}, "
+                                f"win_rate={metrics['win_rate']:.2%}",
+                                flush=True,
+                            )
                 summary = {
                     "stage": "dpo",
                     "epoch": epoch + 1,
