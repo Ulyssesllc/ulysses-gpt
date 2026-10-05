@@ -73,7 +73,9 @@ class BPETokenizer:
         return self.encoder.encode(text, allowed_special={"<|endoftext|>"})
 
     def decode(self, tokens: list[int]) -> str:
-        return self.encoder.decode(tokens)
+        return self.encoder.decode(
+            [token for token in tokens if token != self.encoder.eot_token]
+        )
 
 
 class CharTokenizer:

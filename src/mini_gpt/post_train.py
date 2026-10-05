@@ -8,14 +8,50 @@ from torch.utils.data import Dataset
 from .model import MiniGPT
 
 
+def _truncate_response(
+    response_ids: List[int], max_length: int, eos_token_id: int | None
+) -> list[int]:
+    if max_length <= 0:
+        return []
+    response_ids = list(response_ids[:max_length])
+    if eos_token_id is not None:
+        if response_ids:
+            response_ids[-1] = eos_token_id
+        else:
+            response_ids.append(eos_token_id)
+    return response_ids
+
+
 def _pack_prompt_response(
-    prompt_ids: List[int], response_ids: List[int], block_size: int, pad_token_id: int
+    prompt_ids: List[int],
+    response_ids: List[int],
+    block_size: int,
+    pad_token_id: int,
+    eos_token_id: int | None = None,
+    prompt_token_budget: int | None = None,
 ) -> tuple[list[int], list[int]]:
-    """Keep the response and the most recent prompt tokens within the context."""
+    """Pack a response with prompt space reserved and prompt labels masked."""
     if block_size < 2:
         raise ValueError("block_size must be at least 2 for prompt/response training")
-    response_ids = response_ids[: block_size - 1]
-    prompt_ids = prompt_ids[-(block_size - len(response_ids)) :]
+    response_ids = list(response_ids)
+    if eos_token_id is not None and (
+        not response_ids or response_ids[-1] != eos_token_id
+    ):
+        response_ids.append(eos_token_id)
+
+    if prompt_token_budget is None:
+        reserved_prompt = min(len(prompt_ids), max(1, block_size // 4))
+        response_ids = _truncate_response(
+            response_ids, block_size - reserved_prompt, eos_token_id
+        )
+        prompt_token_budget = min(len(prompt_ids), block_size - len(response_ids))
+    else:
+        prompt_token_budget = min(len(prompt_ids), prompt_token_budget, block_size - 1)
+        response_ids = _truncate_response(
+            response_ids, block_size - prompt_token_budget, eos_token_id
+        )
+
+    prompt_ids = prompt_ids[-prompt_token_budget:] if prompt_token_budget else []
     input_ids = prompt_ids + response_ids
     labels = [-100] * len(prompt_ids) + response_ids
     pad = block_size - len(input_ids)
@@ -30,6 +66,7 @@ class SFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         tokenizer: Any,
         block_size: int,
         pad_token_id: int = 0,
+        eos_token_id: int | None = None,
     ):
         self.samples = []
 
@@ -38,7 +75,7 @@ class SFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             r_ids = tokenizer.encode(response)
 
             combined_input, combined_target = _pack_prompt_response(
-                p_ids, r_ids, block_size, pad_token_id
+                p_ids, r_ids, block_size, pad_token_id, eos_token_id
             )
 
             self.samples.append(
@@ -64,6 +101,7 @@ class DPODataset(Dataset[Dict[str, torch.Tensor]]):
         tokenizer: Any,
         block_size: int,
         pad_token_id: int = 0,
+        eos_token_id: int | None = None,
     ):
         self.samples = []
 
@@ -72,11 +110,35 @@ class DPODataset(Dataset[Dict[str, torch.Tensor]]):
             c_ids = tokenizer.encode(c)
             r_ids = tokenizer.encode(r)
 
+            if eos_token_id is not None:
+                if not c_ids or c_ids[-1] != eos_token_id:
+                    c_ids.append(eos_token_id)
+                if not r_ids or r_ids[-1] != eos_token_id:
+                    r_ids.append(eos_token_id)
+
+            prompt_reserve = min(len(p_ids), max(1, block_size // 4))
+            response_budget = block_size - prompt_reserve
+            c_ids = _truncate_response(c_ids, response_budget, eos_token_id)
+            r_ids = _truncate_response(r_ids, response_budget, eos_token_id)
+            shared_prompt_budget = min(
+                len(p_ids), block_size - max(len(c_ids), len(r_ids))
+            )
+
             c_input, c_target = _pack_prompt_response(
-                p_ids, c_ids, block_size, pad_token_id
+                p_ids,
+                c_ids,
+                block_size,
+                pad_token_id,
+                eos_token_id,
+                prompt_token_budget=shared_prompt_budget,
             )
             r_input, r_target = _pack_prompt_response(
-                p_ids, r_ids, block_size, pad_token_id
+                p_ids,
+                r_ids,
+                block_size,
+                pad_token_id,
+                eos_token_id,
+                prompt_token_budget=shared_prompt_budget,
             )
 
             self.samples.append(

@@ -98,6 +98,7 @@ SFT expects prompt and response columns. DPO expects prompt, chosen, and rejecte
 ```bash
 export SFT_HF_DATASET="your-org/instruction-data"
 export SFT_PROMPT_COLUMN="prompt"
+export SFT_CONTEXT_COLUMN="context" # optional; appended when non-empty
 export RESPONSE_COLUMN="response"
 export SFT_EPOCHS=1
 export SFT_MAX_SAMPLES=2000

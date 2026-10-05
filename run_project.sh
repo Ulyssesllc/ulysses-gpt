@@ -39,7 +39,8 @@ Main environment variables:
 
 Optional SFT (runs when SFT_HF_DATASET is non-empty):
   SFT_HF_DATASET, SFT_HF_CONFIG, SFT_HF_SPLIT
-  SFT_PROMPT_COLUMN, RESPONSE_COLUMN, SFT_EPOCHS, SFT_MAX_SAMPLES, SFT_LR
+  SFT_PROMPT_COLUMN, SFT_CONTEXT_COLUMN, RESPONSE_COLUMN
+  SFT_EPOCHS, SFT_MAX_SAMPLES, SFT_LR
 
 Optional DPO (runs when DPO_HF_DATASET is non-empty):
   DPO_HF_DATASET, DPO_HF_CONFIG, DPO_HF_SPLIT
@@ -121,13 +122,15 @@ FINAL_MODEL="$PRETRAIN_CHECKPOINT"
 if [[ -n "${SFT_HF_DATASET:-}" ]]; then
     : "${SFT_HF_SPLIT:=train}"
     : "${SFT_PROMPT_COLUMN:=${PROMPT_COLUMN:-prompt}}"
+    : "${SFT_CONTEXT_COLUMN:=context}"
     : "${RESPONSE_COLUMN:=response}"
     : "${SFT_EPOCHS:=1}"
     : "${SFT_MAX_SAMPLES:=10000}"
     : "${SFT_LR:=0.0001}"
     sft_args=(
         --task sft --hf-dataset "$SFT_HF_DATASET" --hf-split "$SFT_HF_SPLIT"
-        --prompt-column "$SFT_PROMPT_COLUMN" --response-column "$RESPONSE_COLUMN"
+        --prompt-column "$SFT_PROMPT_COLUMN" --context-column "$SFT_CONTEXT_COLUMN"
+        --response-column "$RESPONSE_COLUMN"
         --checkpoint "$PRETRAIN_CHECKPOINT" --checkpoint-dir "$CHECKPOINT_DIR"
         --block-size "$BLOCK_SIZE" --batch-size "$BATCH_SIZE"
         --epochs "$SFT_EPOCHS" --max-samples "$SFT_MAX_SAMPLES"

@@ -96,6 +96,11 @@ def _encode_texts(
                     continue
                 remaining = max_tokens - token_count
                 ids = ids[:remaining]
+                eot_token_id = tokenizer.encoder.eot_token
+                if ids[-1] != eot_token_id:
+                    if len(ids) == remaining:
+                        ids = ids[:-1]
+                    ids.append(eot_token_id)
                 if ids:
                     token_chunks.append(torch.tensor(ids, dtype=torch.int32))
                     token_count += len(ids)
@@ -151,6 +156,7 @@ def main() -> None:
     parser.add_argument("--text-column", default="auto")
     parser.add_argument("--prompt-column", default="prompt")
     parser.add_argument("--response-column", default="response")
+    parser.add_argument("--context-column", default="context")
     parser.add_argument("--chosen-column", default="chosen")
     parser.add_argument("--rejected-column", default="rejected")
     parser.add_argument("--min-text-characters", type=int, default=1)
@@ -353,14 +359,37 @@ def main() -> None:
             train_rows = rows[:-validation_count] if validation_count else rows
             validation_rows = rows[-validation_count:] if validation_count else []
             prompts = [_stringify(row[args.prompt_column]) for row in train_rows]
+            if args.context_column in dataset.column_names:
+                prompts = [
+                    f"Context:\n{_stringify(row[args.context_column])}"
+                    f"\n\nInstruction:\n{prompt}"
+                    if _stringify(row[args.context_column]).strip()
+                    else prompt
+                    for prompt, row in zip(prompts, train_rows)
+                ]
             responses = [_stringify(row[args.response_column]) for row in train_rows]
             validation_prompts = [
                 _stringify(row[args.prompt_column]) for row in validation_rows
             ]
+            if args.context_column in dataset.column_names:
+                validation_prompts = [
+                    f"Context:\n{_stringify(row[args.context_column])}"
+                    f"\n\nInstruction:\n{prompt}"
+                    if _stringify(row[args.context_column]).strip()
+                    else prompt
+                    for prompt, row in zip(validation_prompts, validation_rows)
+                ]
             validation_responses = [
                 _stringify(row[args.response_column]) for row in validation_rows
             ]
-            post_data = SFTDataset(prompts, responses, tokenizer, args.block_size)
+            eot_token_id = tokenizer.encoder.eot_token
+            post_data = SFTDataset(
+                prompts,
+                responses,
+                tokenizer,
+                args.block_size,
+                eos_token_id=eot_token_id,
+            )
             loader = DataLoader(post_data, batch_size=args.batch_size, shuffle=True)
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
             model.to(device).train()
@@ -400,6 +429,7 @@ def main() -> None:
                             validation_responses[start:end],
                             tokenizer,
                             args.block_size,
+                            eos_token_id=eot_token_id,
                         )
                         val_loader = DataLoader(val_batch, batch_size=args.batch_size)
                         for val_x, val_y in val_loader:
@@ -438,6 +468,7 @@ def main() -> None:
                             max_new_tokens=min(80, args.block_size - len(prompt_ids)),
                             temperature=0.8,
                             top_k=40,
+                            eos_token_id=eot_token_id,
                         )
                         prediction = tokenizer.decode(
                             output[0, len(prompt_ids) :].tolist()
@@ -483,7 +514,12 @@ def main() -> None:
                 _stringify(dataset[i][args.rejected_column]) for i in range(count)
             ]
             post_data = DPODataset(
-                prompts, chosen, rejected, tokenizer, args.block_size
+                prompts,
+                chosen,
+                rejected,
+                tokenizer,
+                args.block_size,
+                eos_token_id=tokenizer.encoder.eot_token,
             )
             loader = DataLoader(post_data, batch_size=args.batch_size, shuffle=True)
             trainer = DPOTrainer(model, lr=args.learning_rate, device=device)
@@ -532,7 +568,12 @@ def main() -> None:
     model.eval().to(device)
     ids = torch.tensor([tokenizer.encode(args.prompt)], dtype=torch.long, device=device)
     sampled, inference_metrics = generate_with_metrics(
-        model, ids, max_new_tokens=80, temperature=0.8, top_k=40
+        model,
+        ids,
+        max_new_tokens=80,
+        temperature=0.8,
+        top_k=40,
+        eos_token_id=tokenizer.encoder.eot_token,
     )
     print("Sample:", tokenizer.decode(sampled[0].tolist()))
     print(
